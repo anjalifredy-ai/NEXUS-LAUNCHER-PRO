@@ -2,6 +2,7 @@ package com.nexus.launcher.di
 
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import com.nexus.launcher.data.remote.MojangApi
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -47,6 +48,11 @@ object NetworkModule {
             .addConverterFactory(GsonConverterFactory.create(gson))
             .build()
     }
+
+    @Provides
+    @Singleton
+    fun provideMojangApi(@Named("mojang") retrofit: Retrofit): MojangApi =
+        retrofit.create(MojangApi::class.java)
 
     @Provides
     @Singleton
