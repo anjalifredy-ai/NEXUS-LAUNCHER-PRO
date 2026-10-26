@@ -12,14 +12,18 @@ import javax.inject.Singleton
 
 /**
  * Orchestrator for on-device server hosting.
- * Create → install → start → console → stop.
+ * Create → install (Vanilla/Paper/Fabric) → settings → worlds → plugins → start/stop.
  */
 @Singleton
 class ServerManager @Inject constructor(
     private val store: ServerStore,
     private val vanillaInstaller: VanillaServerInstaller,
+    private val paperInstaller: PaperServerInstaller,
+    private val fabricInstaller: FabricServerInstaller,
     private val processManager: ServerProcessManager,
-    private val ramAdvisor: ServerRamAdvisor
+    private val ramAdvisor: ServerRamAdvisor,
+    private val worldManager: ServerWorldManager,
+    private val pluginManager: ServerPluginManager
 ) {
     val servers: StateFlow<List<ServerConfig>> = store.servers
     val runtimeStatus: StateFlow<Map<String, ServerRuntimeStatus>> = processManager.status
@@ -38,9 +42,7 @@ class ServerManager @Inject constructor(
     ): Result<ServerConfig> {
         if (name.isBlank()) return Result.failure(IllegalArgumentException("Name required"))
         if (!ramAdvisor.isAllocationSafe(memoryMb)) {
-            return Result.failure(
-                IllegalArgumentException("Unsafe RAM allocation: ${memoryMb} MB")
-            )
+            return Result.failure(IllegalArgumentException("Unsafe RAM allocation: ${memoryMb} MB"))
         }
 
         val id = store.createId()
@@ -60,12 +62,41 @@ class ServerManager @Inject constructor(
         return Result.success(config)
     }
 
-    suspend fun installSoftware(config: ServerConfig): VanillaServerInstaller.InstallResult {
+    data class InstallOutcome(
+        val success: Boolean,
+        val message: String,
+        val jar: File? = null
+    )
+
+    suspend fun installSoftware(config: ServerConfig): InstallOutcome {
         return when (config.software) {
-            ServerSoftware.VANILLA -> vanillaInstaller.install(config)
-            else -> VanillaServerInstaller.InstallResult(
-                false, null,
-                "${config.software.displayName} installer not implemented yet. Vanilla works now."
+            ServerSoftware.VANILLA -> {
+                val r = vanillaInstaller.install(config)
+                InstallOutcome(r.success, r.error ?: "Vanilla installed", r.serverJar)
+            }
+            ServerSoftware.PAPER -> {
+                val r = paperInstaller.install(config)
+                InstallOutcome(
+                    r.success,
+                    r.error ?: "Paper build ${r.buildNumber} installed",
+                    r.serverJar
+                )
+            }
+            ServerSoftware.FABRIC -> {
+                val r = fabricInstaller.install(config)
+                InstallOutcome(
+                    r.success,
+                    r.error ?: "Fabric loader ${r.loaderVersion} installed",
+                    r.serverJar
+                )
+            }
+            ServerSoftware.FORGE,
+            ServerSoftware.NEOFORGE,
+            ServerSoftware.QUILT,
+            ServerSoftware.SPIGOT,
+            ServerSoftware.PURPUR -> InstallOutcome(
+                false,
+                "${config.software.displayName} installer coming next. Vanilla / Paper / Fabric work now."
             )
         }
     }
@@ -74,12 +105,17 @@ class ServerManager @Inject constructor(
         val config = store.getById(serverId)
             ?: return Result.failure(IllegalArgumentException("Server not found"))
         val updated = config.copy(eulaAccepted = true)
-        // Write eula.txt immediately
-        File(config.serverDir, "eula.txt").writeText(
-            "# Accepted by user in Nexus Launcher\neula=true\n"
-        )
+        File(config.serverDir, "eula.txt").writeText("# Accepted in Nexus Launcher\neula=true\n")
         store.save(updated)
         return Result.success(updated)
+    }
+
+    /** Persist all toggles to config + server.properties */
+    suspend fun updateSettings(config: ServerConfig): Result<ServerConfig> {
+        val propsFile = File(config.serverDir, "server.properties")
+        ServerPropertiesWriter.applyConfig(propsFile, config)
+        store.save(config)
+        return Result.success(config)
     }
 
     suspend fun startServer(serverId: String): Result<Unit> {
@@ -104,9 +140,56 @@ class ServerManager @Inject constructor(
         }
     }
 
+    // Worlds
+    suspend fun listServerWorlds(serverId: String) =
+        store.getById(serverId)?.let { worldManager.listServerWorlds(it) } ?: emptyList()
+
+    suspend fun listLauncherSaves() = worldManager.listLauncherSaves()
+
+    suspend fun importWorld(serverId: String, sourcePath: String, targetName: String? = null): Result<File> {
+        val config = store.getById(serverId)
+            ?: return Result.failure(IllegalArgumentException("Server not found"))
+        val source = File(sourcePath)
+        return worldManager.importWorldToServer(config, source, targetName ?: source.name)
+    }
+
+    suspend fun setActiveWorld(serverId: String, worldName: String): Result<Unit> {
+        val config = store.getById(serverId)
+            ?: return Result.failure(IllegalArgumentException("Server not found"))
+        val result = worldManager.setActiveWorld(config, worldName)
+        if (result.isSuccess) {
+            store.save(config.copy(worldDir = worldName))
+        }
+        return result
+    }
+
+    // Plugins / mods
+    suspend fun listPlugins(serverId: String) =
+        store.getById(serverId)?.let { pluginManager.list(it) } ?: emptyList()
+
+    suspend fun installPluginFromUrl(serverId: String, url: String, fileName: String): Result<File> {
+        val config = store.getById(serverId)
+            ?: return Result.failure(IllegalArgumentException("Server not found"))
+        return pluginManager.installFromUrl(config, url, fileName)
+    }
+
+    suspend fun togglePlugin(serverId: String, fileName: String, enabled: Boolean): Result<Boolean> {
+        val config = store.getById(serverId)
+            ?: return Result.failure(IllegalArgumentException("Server not found"))
+        return pluginManager.setEnabled(config, fileName, enabled)
+    }
+
+    suspend fun deletePlugin(serverId: String, fileName: String): Result<Unit> {
+        val config = store.getById(serverId)
+            ?: return Result.failure(IllegalArgumentException("Server not found"))
+        return pluginManager.delete(config, fileName)
+    }
+
     fun ramAdvice(alsoPlaying: Boolean = false) = ramAdvisor.advise(alsoPlaying)
 
     fun statusOf(serverId: String): ServerRuntimeStatus =
         processManager.getStatus(serverId)
             ?: ServerRuntimeStatus(serverId, ServerState.STOPPED)
+
+    suspend fun getById(serverId: String) = store.getById(serverId)
 }
