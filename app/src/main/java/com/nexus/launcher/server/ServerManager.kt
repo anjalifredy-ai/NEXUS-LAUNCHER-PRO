@@ -10,10 +10,6 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Orchestrator for on-device server hosting.
- * Create → install (Vanilla/Paper/Fabric) → settings → worlds → plugins → start/stop.
- */
 @Singleton
 class ServerManager @Inject constructor(
     private val store: ServerStore,
@@ -23,7 +19,8 @@ class ServerManager @Inject constructor(
     private val processManager: ServerProcessManager,
     private val ramAdvisor: ServerRamAdvisor,
     private val worldManager: ServerWorldManager,
-    private val pluginManager: ServerPluginManager
+    private val pluginManager: ServerPluginManager,
+    private val viaVersionInstaller: ViaVersionInstaller
 ) {
     val servers: StateFlow<List<ServerConfig>> = store.servers
     val runtimeStatus: StateFlow<Map<String, ServerRuntimeStatus>> = processManager.status
@@ -68,8 +65,8 @@ class ServerManager @Inject constructor(
         val jar: File? = null
     )
 
-    suspend fun installSoftware(config: ServerConfig): InstallOutcome {
-        return when (config.software) {
+    suspend fun installSoftware(config: ServerConfig, installViaVersion: Boolean = false): InstallOutcome {
+        val base = when (config.software) {
             ServerSoftware.VANILLA -> {
                 val r = vanillaInstaller.install(config)
                 InstallOutcome(r.success, r.error ?: "Vanilla installed", r.serverJar)
@@ -90,15 +87,24 @@ class ServerManager @Inject constructor(
                     r.serverJar
                 )
             }
-            ServerSoftware.FORGE,
-            ServerSoftware.NEOFORGE,
-            ServerSoftware.QUILT,
-            ServerSoftware.SPIGOT,
-            ServerSoftware.PURPUR -> InstallOutcome(
+            else -> InstallOutcome(
                 false,
                 "${config.software.displayName} installer coming next. Vanilla / Paper / Fabric work now."
             )
         }
+        if (base.success && installViaVersion && config.software == ServerSoftware.PAPER) {
+            val via = viaVersionInstaller.installForCrossVersion(config)
+            return base.copy(
+                message = base.message + " | " + via.message
+            )
+        }
+        return base
+    }
+
+    suspend fun installViaVersion(serverId: String): ViaVersionInstaller.Result {
+        val config = store.getById(serverId)
+            ?: return ViaVersionInstaller.Result(false, "Server not found")
+        return viaVersionInstaller.installForCrossVersion(config)
     }
 
     suspend fun acceptEula(serverId: String): Result<ServerConfig> {
@@ -110,7 +116,6 @@ class ServerManager @Inject constructor(
         return Result.success(updated)
     }
 
-    /** Persist all toggles to config + server.properties */
     suspend fun updateSettings(config: ServerConfig): Result<ServerConfig> {
         val propsFile = File(config.serverDir, "server.properties")
         ServerPropertiesWriter.applyConfig(propsFile, config)
@@ -140,7 +145,6 @@ class ServerManager @Inject constructor(
         }
     }
 
-    // Worlds
     suspend fun listServerWorlds(serverId: String) =
         store.getById(serverId)?.let { worldManager.listServerWorlds(it) } ?: emptyList()
 
@@ -149,21 +153,17 @@ class ServerManager @Inject constructor(
     suspend fun importWorld(serverId: String, sourcePath: String, targetName: String? = null): Result<File> {
         val config = store.getById(serverId)
             ?: return Result.failure(IllegalArgumentException("Server not found"))
-        val source = File(sourcePath)
-        return worldManager.importWorldToServer(config, source, targetName ?: source.name)
+        return worldManager.importWorldToServer(config, File(sourcePath), targetName ?: File(sourcePath).name)
     }
 
     suspend fun setActiveWorld(serverId: String, worldName: String): Result<Unit> {
         val config = store.getById(serverId)
             ?: return Result.failure(IllegalArgumentException("Server not found"))
         val result = worldManager.setActiveWorld(config, worldName)
-        if (result.isSuccess) {
-            store.save(config.copy(worldDir = worldName))
-        }
+        if (result.isSuccess) store.save(config.copy(worldDir = worldName))
         return result
     }
 
-    // Plugins / mods
     suspend fun listPlugins(serverId: String) =
         store.getById(serverId)?.let { pluginManager.list(it) } ?: emptyList()
 
