@@ -5,7 +5,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,22 +35,24 @@ class MainActivity : ComponentActivity() {
             NexusTheme {
                 var route by remember { mutableStateOf("servers") }
                 var selectedServerId by remember { mutableStateOf<String?>(null) }
-                var mcVersions by remember { mutableStateOf(listOf("1.21.1", "1.20.4", "1.19.4", "1.18.2", "1.16.5")) }
+                var mcVersions by remember {
+                    mutableStateOf(listOf("1.21.1", "1.20.4", "1.19.4", "1.18.2", "1.16.5"))
+                }
 
                 LaunchedEffect(Unit) {
                     serverManager.loadServers()
                     try {
-                        val manifest = versionManager.fetchVersionManifest()
+                        val manifest = versionManager.getVersionManifest()
                         val releases = manifest.versions
                             .filter { it.type == "release" }
                             .map { it.id }
                         if (releases.isNotEmpty()) mcVersions = releases
                     } catch (_: Exception) {
-                        // keep fallback list
+                        // keep fallback list until network works
                     }
                 }
 
-                Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
+                Scaffold(modifier = Modifier.fillMaxSize()) {
                     when (route) {
                         "create" -> CreateServerScreen(
                             serverManager = serverManager,
@@ -65,10 +66,7 @@ class MainActivity : ComponentActivity() {
                         )
                         else -> ServerListScreen(
                             serverManager = serverManager,
-                            onOpenServer = { id ->
-                                selectedServerId = id
-                                // Detail screen next batch
-                            },
+                            onOpenServer = { id -> selectedServerId = id },
                             onCreateServer = { route = "create" }
                         )
                     }
