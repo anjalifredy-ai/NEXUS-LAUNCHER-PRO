@@ -26,13 +26,14 @@ import javax.inject.Singleton
 
 /**
  * Runs at most one active Minecraft Java server process on-device by default.
- * Captures real stdout/stderr. Sends real console commands.
- * Never reports ONLINE until readiness markers appear in output.
+ * Real ProcessBuilder. Real stdout. ONLINE only after readiness markers.
+ * Java major from ServerJavaResolver (8 / 17 / 21).
  */
 @Singleton
 class ServerProcessManager @Inject constructor(
     private val javaRuntimeManager: JavaRuntimeManager,
-    private val ramAdvisor: ServerRamAdvisor
+    private val ramAdvisor: ServerRamAdvisor,
+    private val javaResolver: ServerJavaResolver
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -57,53 +58,41 @@ class ServerProcessManager @Inject constructor(
         if (processes.containsKey(config.id)) {
             return@withContext Result.failure(IllegalStateException("Server already running"))
         }
-
-        // Default: only one active server
         if (processes.isNotEmpty()) {
             return@withContext Result.failure(
                 IllegalStateException("Another server is already running. Stop it first.")
             )
         }
-
         if (!config.eulaAccepted) {
             return@withContext Result.failure(
-                IllegalStateException("Minecraft EULA not accepted. Accept EULA before starting.")
+                IllegalStateException("Minecraft EULA not accepted.")
             )
         }
-
         if (!ramAdvisor.isAllocationSafe(config.memoryMb)) {
             return@withContext Result.failure(
-                IllegalStateException(
-                    "Requested ${config.memoryMb} MB is outside safe range for this device."
-                )
+                IllegalStateException("Requested ${config.memoryMb} MB outside safe range.")
             )
         }
 
         val serverDir = File(config.serverDir)
         val jar = File(serverDir, "server.jar")
         if (!jar.exists()) {
-            return@withContext Result.failure(IllegalStateException("server.jar not found. Install server first."))
+            return@withContext Result.failure(IllegalStateException("server.jar not found. Install first."))
         }
 
         updateStatus(config.id, ServerState.STARTING, config.memoryMb)
 
         try {
-            val javaVersion = when {
-                config.minecraftVersion.startsWith("1.20") ||
-                    config.minecraftVersion.startsWith("1.21") -> 21
-                config.minecraftVersion.startsWith("1.17") ||
-                    config.minecraftVersion.startsWith("1.18") ||
-                    config.minecraftVersion.startsWith("1.19") -> 17
-                else -> 8
-            }
-            val jreDir = javaRuntimeManager.getJrePath(javaVersion)
+            val javaMajor = javaResolver.requiredJava(config.minecraftVersion).major
+            val jreDir = javaRuntimeManager.getJrePath(javaMajor)
             val javaBin = File(jreDir, "bin/java").absolutePath
 
             val args = mutableListOf(
                 javaBin,
-                "-Xms${config.memoryMb / 2}m",
+                "-Xms${(config.memoryMb / 2).coerceAtLeast(256)}m",
                 "-Xmx${config.memoryMb}m",
                 "-XX:+UseG1GC",
+                "-XX:+ParallelRefProcEnabled",
                 "-Djava.awt.headless=true"
             )
             if (config.jvmArgs.isNotBlank()) {
@@ -113,12 +102,11 @@ class ServerProcessManager @Inject constructor(
             args.add(jar.absolutePath)
             args.add("nogui")
 
-            val pb = ProcessBuilder(args).apply {
-                directory(serverDir)
-                redirectErrorStream(true)
-            }
+            val process = ProcessBuilder(args)
+                .directory(serverDir)
+                .redirectErrorStream(true)
+                .start()
 
-            val process = pb.start()
             processes[config.id] = process
             startTimes[config.id] = System.currentTimeMillis()
             writers[config.id] = BufferedWriter(OutputStreamWriter(process.outputStream))
@@ -134,10 +122,7 @@ class ServerProcessManager @Inject constructor(
                             if (line.contains("Failed to start", ignoreCase = true) ||
                                 line.contains("OutOfMemoryError", ignoreCase = true)
                             ) {
-                                updateStatus(
-                                    config.id, ServerState.FAILED, config.memoryMb,
-                                    error = line
-                                )
+                                updateStatus(config.id, ServerState.FAILED, config.memoryMb, error = line)
                             }
                         }
                     }
@@ -170,20 +155,16 @@ class ServerProcessManager @Inject constructor(
     suspend fun stop(serverId: String, force: Boolean = false) = withContext(Dispatchers.IO) {
         val process = processes[serverId] ?: return@withContext
         updateStatus(serverId, ServerState.STOPPING, _status.value[serverId]?.memoryMaxMb?.toInt() ?: 0)
-
         try {
             if (!force) {
                 sendCommand(serverId, "stop")
-                // Give graceful shutdown a few seconds
                 var waited = 0
                 while (process.isAlive && waited < 15000) {
                     Thread.sleep(500)
                     waited += 500
                 }
             }
-            if (process.isAlive) {
-                process.destroyForcibly()
-            }
+            if (process.isAlive) process.destroyForcibly()
         } catch (e: Exception) {
             Timber.e(e, "Stop failed")
             process.destroyForcibly()
