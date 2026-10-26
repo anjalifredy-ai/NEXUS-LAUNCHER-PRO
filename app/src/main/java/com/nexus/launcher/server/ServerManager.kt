@@ -1,9 +1,11 @@
 package com.nexus.launcher.server
 
+import android.content.Context
 import com.nexus.launcher.server.model.ServerConfig
 import com.nexus.launcher.server.model.ServerRuntimeStatus
 import com.nexus.launcher.server.model.ServerSoftware
 import com.nexus.launcher.server.model.ServerState
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
@@ -12,10 +14,15 @@ import javax.inject.Singleton
 
 @Singleton
 class ServerManager @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val store: ServerStore,
     private val vanillaInstaller: VanillaServerInstaller,
     private val paperInstaller: PaperServerInstaller,
     private val fabricInstaller: FabricServerInstaller,
+    private val forgeInstaller: ForgeServerInstaller,
+    private val neoForgeInstaller: NeoForgeServerInstaller,
+    private val quiltInstaller: QuiltServerInstaller,
+    private val purpurInstaller: PurpurServerInstaller,
     private val processManager: ServerProcessManager,
     private val ramAdvisor: ServerRamAdvisor,
     private val worldManager: ServerWorldManager,
@@ -73,30 +80,39 @@ class ServerManager @Inject constructor(
             }
             ServerSoftware.PAPER -> {
                 val r = paperInstaller.install(config)
-                InstallOutcome(
-                    r.success,
-                    r.error ?: "Paper build ${r.buildNumber} installed",
-                    r.serverJar
-                )
+                InstallOutcome(r.success, r.error ?: "Paper build ${r.buildNumber} installed", r.serverJar)
             }
             ServerSoftware.FABRIC -> {
                 val r = fabricInstaller.install(config)
-                InstallOutcome(
-                    r.success,
-                    r.error ?: "Fabric loader ${r.loaderVersion} installed",
-                    r.serverJar
-                )
+                InstallOutcome(r.success, r.error ?: "Fabric loader ${r.loaderVersion} installed", r.serverJar)
             }
-            else -> InstallOutcome(
+            ServerSoftware.FORGE -> {
+                val r = forgeInstaller.install(config)
+                InstallOutcome(r.success, r.message)
+            }
+            ServerSoftware.NEOFORGE -> {
+                val r = neoForgeInstaller.install(config)
+                InstallOutcome(r.success, r.message)
+            }
+            ServerSoftware.QUILT -> {
+                val r = quiltInstaller.install(config)
+                InstallOutcome(r.success, r.message)
+            }
+            ServerSoftware.PURPUR -> {
+                val r = purpurInstaller.install(config)
+                InstallOutcome(r.success, r.message)
+            }
+            ServerSoftware.SPIGOT -> InstallOutcome(
                 false,
-                "${config.software.displayName} installer coming next. Vanilla / Paper / Fabric work now."
+                "Spigot requires BuildTools (heavy). Use Paper for similar API + easier install."
             )
         }
-        if (base.success && installViaVersion && config.software == ServerSoftware.PAPER) {
+
+        if (base.success && installViaVersion &&
+            config.software in listOf(ServerSoftware.PAPER, ServerSoftware.PURPUR, ServerSoftware.SPIGOT)
+        ) {
             val via = viaVersionInstaller.installForCrossVersion(config)
-            return base.copy(
-                message = base.message + " | " + via.message
-            )
+            return base.copy(message = base.message + " | " + via.message)
         }
         return base
     }
@@ -117,8 +133,7 @@ class ServerManager @Inject constructor(
     }
 
     suspend fun updateSettings(config: ServerConfig): Result<ServerConfig> {
-        val propsFile = File(config.serverDir, "server.properties")
-        ServerPropertiesWriter.applyConfig(propsFile, config)
+        ServerPropertiesWriter.applyConfig(File(config.serverDir, "server.properties"), config)
         store.save(config)
         return Result.success(config)
     }
@@ -126,11 +141,18 @@ class ServerManager @Inject constructor(
     suspend fun startServer(serverId: String): Result<Unit> {
         val config = store.getById(serverId)
             ?: return Result.failure(IllegalArgumentException("Server not found"))
-        return processManager.start(config)
+        val result = processManager.start(config)
+        if (result.isSuccess) {
+            ServerForegroundService.start(context, config.name, config.port)
+        }
+        return result
     }
 
     suspend fun stopServer(serverId: String, force: Boolean = false) {
         processManager.stop(serverId, force)
+        if (!processManager.isAnyRunning()) {
+            ServerForegroundService.stop(context)
+        }
     }
 
     fun sendCommand(serverId: String, command: String): Boolean =
@@ -140,9 +162,8 @@ class ServerManager @Inject constructor(
         processManager.stop(serverId, force = true)
         val config = store.getById(serverId)
         store.delete(serverId)
-        if (deleteFiles && config != null) {
-            File(config.serverDir).deleteRecursively()
-        }
+        if (deleteFiles && config != null) File(config.serverDir).deleteRecursively()
+        if (!processManager.isAnyRunning()) ServerForegroundService.stop(context)
     }
 
     suspend fun listServerWorlds(serverId: String) =
