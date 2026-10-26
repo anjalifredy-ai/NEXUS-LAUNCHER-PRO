@@ -3,6 +3,7 @@ package com.nexus.launcher.di
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.nexus.launcher.data.remote.MojangApi
+import com.nexus.launcher.data.remote.PaperApi
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -53,6 +54,22 @@ object NetworkModule {
     @Singleton
     fun provideMojangApi(@Named("mojang") retrofit: Retrofit): MojangApi =
         retrofit.create(MojangApi::class.java)
+
+    @Provides
+    @Singleton
+    @Named("paper")
+    fun providePaperRetrofit(client: OkHttpClient, gson: Gson): Retrofit {
+        return Retrofit.Builder()
+            .baseUrl("https://api.papermc.io/")
+            .client(client)
+            .addConverterFactory(GsonConverterFactory.create(gson))
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    fun providePaperApi(@Named("paper") retrofit: Retrofit): PaperApi =
+        retrofit.create(PaperApi::class.java)
 
     @Provides
     @Singleton
