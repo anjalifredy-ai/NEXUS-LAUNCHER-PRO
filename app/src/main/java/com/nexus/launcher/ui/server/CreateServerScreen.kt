@@ -106,7 +106,6 @@ fun CreateServerScreen(
         )
         Spacer(Modifier.height(12.dp))
 
-        // Software picker
         ExposedDropdownMenuBox(expanded = softwareExpanded, onExpandedChange = { softwareExpanded = it }) {
             OutlinedTextField(
                 value = software.displayName,
@@ -118,11 +117,7 @@ fun CreateServerScreen(
                 colors = fieldColors
             )
             ExposedDropdownMenu(expanded = softwareExpanded, onDismissRequest = { softwareExpanded = false }) {
-                listOf(
-                    ServerSoftware.VANILLA,
-                    ServerSoftware.PAPER,
-                    ServerSoftware.FABRIC
-                ).forEach { s ->
+                listOf(ServerSoftware.VANILLA, ServerSoftware.PAPER, ServerSoftware.FABRIC).forEach { s ->
                     DropdownMenuItem(
                         text = { Text(s.displayName) },
                         onClick = {
@@ -135,7 +130,6 @@ fun CreateServerScreen(
         }
         Spacer(Modifier.height(12.dp))
 
-        // MC version picker
         ExposedDropdownMenuBox(expanded = versionExpanded, onExpandedChange = { versionExpanded = it }) {
             OutlinedTextField(
                 value = mcVersion,
@@ -161,13 +155,12 @@ fun CreateServerScreen(
 
         Spacer(Modifier.height(8.dp))
         Text(
-            "Java runtime: ${javaForVersion.label} (auto — no manual pick needed)",
+            "Java runtime: ${javaForVersion.label} (auto)",
             color = NexusColors.Accent,
             fontSize = 13.sp
         )
         Text(
-            "Java ${javaForVersion.major} runs all MC versions that require it. " +
-                "For multi-client versions (e.g. 1.21.1 + 1.21.3), enable ViaVersion on Paper.",
+            "For 1.21.1 + 1.21.3 clients on one server, use Paper + ViaVersion.",
             color = NexusColors.OnSurfaceMuted,
             fontSize = 12.sp
         )
@@ -175,19 +168,16 @@ fun CreateServerScreen(
         Spacer(Modifier.height(16.dp))
         Text("RAM: ${memory.toInt()} MB", color = NexusColors.OnSurface)
         Text(
-            "Device free ~${advice.availableMb} MB · recommended ${advice.recommendedServerMb} · max safe ${advice.maximumSafeServerMb}",
+            "Free ~${advice.availableMb} MB · recommended ${advice.recommendedServerMb} · max ${advice.maximumSafeServerMb}",
             color = NexusColors.OnSurfaceMuted,
             fontSize = 12.sp
         )
         Slider(
             value = memory,
             onValueChange = { memory = it },
-            valueRange = advice.minimumServerMb.toFloat()..advice.maximumSafeServerMb.toFloat(),
-            steps = ((advice.maximumSafeServerMb - advice.minimumServerMb) / 128).coerceAtLeast(0)
+            valueRange = advice.minimumServerMb.toFloat()..advice.maximumSafeServerMb.toFloat()
         )
-        advice.warning?.let {
-            Text(it, color = NexusColors.Warning, fontSize = 12.sp)
-        }
+        advice.warning?.let { Text(it, color = NexusColors.Warning, fontSize = 12.sp) }
 
         Spacer(Modifier.height(12.dp))
         OutlinedTextField(
@@ -209,7 +199,8 @@ fun CreateServerScreen(
         if (software == ServerSoftware.PAPER) {
             TextButton(onClick = { crossVersion = !crossVersion }) {
                 Text(
-                    if (crossVersion) "✓ ViaVersion (multi-client versions)" else "Install ViaVersion for multi-version clients",
+                    if (crossVersion) "✓ ViaVersion (multi-client versions)"
+                    else "Install ViaVersion for multi-version clients",
                     color = if (crossVersion) NexusColors.Primary else NexusColors.OnSurfaceMuted
                 )
             }
@@ -241,14 +232,14 @@ fun CreateServerScreen(
                     )
                     created.fold(
                         onSuccess = { cfg ->
-                            val install = serverManager.installSoftware(cfg)
+                            val install = serverManager.installSoftware(
+                                cfg,
+                                installViaVersion = crossVersion && software == ServerSoftware.PAPER
+                            )
                             if (!install.success) {
                                 error = install.message
                                 busy = false
                                 return@launch
-                            }
-                            if (crossVersion && software == ServerSoftware.PAPER) {
-                                // ViaVersion after jar install
                             }
                             onCreated(cfg.id)
                         },
