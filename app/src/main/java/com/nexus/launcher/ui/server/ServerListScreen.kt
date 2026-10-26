@@ -48,15 +48,13 @@ import com.nexus.launcher.server.model.ServerRuntimeStatus
 import com.nexus.launcher.server.model.ServerState
 import com.nexus.launcher.ui.theme.NexusColors
 
-/**
- * Server Hosting home — banner cards as specified in the master prompt.
- * Each card: icon area, name, MOTD, version, software, state, players, RAM, Start/Stop, Manage.
- */
 @Composable
 fun ServerListScreen(
     serverManager: ServerManager,
     onOpenServer: (String) -> Unit,
-    onCreateServer: () -> Unit
+    onCreateServer: () -> Unit,
+    onStartServer: (String) -> Unit = {},
+    onStopServer: (String) -> Unit = {}
 ) {
     val servers by serverManager.servers.collectAsState()
     val statusMap by serverManager.runtimeStatus.collectAsState()
@@ -66,7 +64,7 @@ fun ServerListScreen(
             .fillMaxSize()
             .background(NexusColors.Background)
     ) {
-        Column(Modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
             Text(
                 text = "SERVER HOSTING",
                 color = NexusColors.Primary,
@@ -114,8 +112,8 @@ fun ServerListScreen(
                             config = server,
                             status = statusMap[server.id],
                             onClick = { onOpenServer(server.id) },
-                            onStart = { /* wired by parent / ViewModel */ },
-                            onStop = { }
+                            onStart = { onStartServer(server.id) },
+                            onStop = { onStopServer(server.id) }
                         )
                     }
                 }
@@ -162,7 +160,6 @@ fun ServerBannerCard(
                 .fillMaxWidth()
                 .height(140.dp)
         ) {
-            // Banner gradient (iconPath later)
             Box(
                 modifier = Modifier
                     .fillMaxSize()
