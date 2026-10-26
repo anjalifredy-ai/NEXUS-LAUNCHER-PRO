@@ -65,6 +65,15 @@ fun CreateServerScreen(
     var versionExpanded by remember { mutableStateOf(false) }
 
     val javaForVersion = javaResolver.requiredJava(mcVersion)
+    val softwares = listOf(
+        ServerSoftware.VANILLA,
+        ServerSoftware.PAPER,
+        ServerSoftware.PURPUR,
+        ServerSoftware.FABRIC,
+        ServerSoftware.QUILT,
+        ServerSoftware.FORGE,
+        ServerSoftware.NEOFORGE
+    )
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
         focusedTextColor = NexusColors.OnSurface,
@@ -117,7 +126,7 @@ fun CreateServerScreen(
                 colors = fieldColors
             )
             ExposedDropdownMenu(expanded = softwareExpanded, onDismissRequest = { softwareExpanded = false }) {
-                listOf(ServerSoftware.VANILLA, ServerSoftware.PAPER, ServerSoftware.FABRIC).forEach { s ->
+                softwares.forEach { s ->
                     DropdownMenuItem(
                         text = { Text(s.displayName) },
                         onClick = {
@@ -154,16 +163,7 @@ fun CreateServerScreen(
         }
 
         Spacer(Modifier.height(8.dp))
-        Text(
-            "Java runtime: ${javaForVersion.label} (auto)",
-            color = NexusColors.Accent,
-            fontSize = 13.sp
-        )
-        Text(
-            "For 1.21.1 + 1.21.3 clients on one server, use Paper + ViaVersion.",
-            color = NexusColors.OnSurfaceMuted,
-            fontSize = 12.sp
-        )
+        Text("Java runtime: ${javaForVersion.label} (auto-install if missing)", color = NexusColors.Accent, fontSize = 13.sp)
 
         Spacer(Modifier.height(16.dp))
         Text("RAM: ${memory.toInt()} MB", color = NexusColors.OnSurface)
@@ -196,7 +196,7 @@ fun CreateServerScreen(
                 color = if (eula) NexusColors.Primary else NexusColors.Warning
             )
         }
-        if (software == ServerSoftware.PAPER) {
+        if (software in listOf(ServerSoftware.PAPER, ServerSoftware.PURPUR)) {
             TextButton(onClick = { crossVersion = !crossVersion }) {
                 Text(
                     if (crossVersion) "✓ ViaVersion (multi-client versions)"
@@ -234,7 +234,8 @@ fun CreateServerScreen(
                         onSuccess = { cfg ->
                             val install = serverManager.installSoftware(
                                 cfg,
-                                installViaVersion = crossVersion && software == ServerSoftware.PAPER
+                                installViaVersion = crossVersion &&
+                                    software in listOf(ServerSoftware.PAPER, ServerSoftware.PURPUR)
                             )
                             if (!install.success) {
                                 error = install.message
