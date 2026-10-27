@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nexus.launcher.auth.AuthManager
 import com.nexus.launcher.cosmetics.CosmeticsStore
+import com.nexus.launcher.cosmetics.source.CatalogueRepository
 import com.nexus.launcher.filesystem.FileSystemManager
 import com.nexus.launcher.jre.JavaRuntimeManager
 import com.nexus.launcher.mods.ModrinthClient
@@ -68,6 +69,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var authManager: AuthManager
     @Inject lateinit var voiceChatManager: VoiceChatManager
     @Inject lateinit var cosmeticsStore: CosmeticsStore
+    @Inject lateinit var catalogueRepository: CatalogueRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -121,6 +123,7 @@ class MainActivity : ComponentActivity() {
                         when {
                             route == "store" -> CosmeticsStoreScreen(
                                 store = cosmeticsStore,
+                                catalogueRepository = catalogueRepository,
                                 onOpenWardrobe = { route = "wardrobe" },
                                 onBack = { route = "servers" }
                             )
