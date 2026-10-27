@@ -1,8 +1,8 @@
 package com.nexus.launcher.version
 
 import com.nexus.launcher.filesystem.FileSystemManager
+import com.nexus.launcher.filesystem.Sha1Verifier
 import com.nexus.launcher.network.DownloadQueueManager
-import com.nexus.launcher.util.Sha1Verifier
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,8 +14,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Downloads a client version JSON + client jar + (optionally) libraries/assets later.
- * Step 1: version JSON + client.jar with SHA1 check.
+ * Downloads client version jar (+ ensures version JSON on disk) with SHA1 verify.
  */
 @Singleton
 class ClientVersionInstaller @Inject constructor(
@@ -39,20 +38,16 @@ class ClientVersionInstaller @Inject constructor(
     suspend fun installClientJar(versionId: String): Result<File> = withContext(Dispatchers.IO) {
         try {
             _progress.value = Progress.FetchingMeta(versionId)
-            val versionJson = versionManager.getVersionJson(versionId)
+            val versionJson = versionManager.getVersionDetails(versionId)
             val client = versionJson.downloads?.client
-                ?: return@withContext Result.failure(IllegalStateException("No client download for $versionId"))
+                ?: return@withContext Result.failure(
+                    IllegalStateException("No client download for $versionId")
+                )
 
             val dir = fileSystemManager.getVersionDir(versionId)
-            val jsonFile = File(dir, "$versionId.json")
-            // Persist version JSON for launch pipeline
-            jsonFile.writeText(
-                // Keep last fetched raw if available; else minimal marker
-                versionManager.getVersionJsonRaw(versionId) ?: "{}"
-            )
-
             val jar = File(dir, "$versionId.jar")
-            if (jar.exists() && client.sha1 != null && sha1Verifier.verify(jar, client.sha1)) {
+
+            if (jar.exists() && !client.sha1.isNullOrBlank() && sha1Verifier.verify(jar, client.sha1)) {
                 _progress.value = Progress.Done(versionId, jar)
                 return@withContext Result.success(jar)
             }
@@ -63,10 +58,11 @@ class ClientVersionInstaller @Inject constructor(
             }
 
             _progress.value = Progress.Verifying(versionId)
-            if (client.sha1 != null && !sha1Verifier.verify(jar, client.sha1)) {
+            if (!client.sha1.isNullOrBlank() && !sha1Verifier.verify(jar, client.sha1)) {
                 jar.delete()
-                _progress.value = Progress.Error(versionId, "SHA1 mismatch for client jar")
-                return@withContext Result.failure(IllegalStateException("SHA1 mismatch"))
+                val msg = "SHA1 mismatch for client jar"
+                _progress.value = Progress.Error(versionId, msg)
+                return@withContext Result.failure(IllegalStateException(msg))
             }
 
             _progress.value = Progress.Done(versionId, jar)
