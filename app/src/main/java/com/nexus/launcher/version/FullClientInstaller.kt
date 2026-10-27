@@ -9,9 +9,6 @@ import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Full client install pipeline: version JSON + client.jar + libraries + assets.
- */
 @Singleton
 class FullClientInstaller @Inject constructor(
     private val versionManager: VersionManager,
@@ -36,15 +33,20 @@ class FullClientInstaller @Inject constructor(
         withContext(Dispatchers.IO) {
             try {
                 _stage.value = Stage.Meta(versionId)
-                val details = versionManager.getVersionDetails(versionId)
+                // Prefer resolved (inheritance) so Fabric/Forge get vanilla libs+assets
+                val details = versionManager.getResolvedVersion(versionId)
 
                 val jarResult = clientVersionInstaller.installClientJar(versionId)
                 jarResult.onFailure {
-                    _stage.value = Stage.Error(versionId, it.message ?: "Client jar failed")
-                    return@withContext Result.failure(it)
+                    // Inherited versions may only have parent client jar
+                    if (details.downloads?.client != null) {
+                        _stage.value = Stage.Error(versionId, it.message ?: "Client jar failed")
+                        return@withContext Result.failure(it)
+                    }
+                    Timber.w(it, "Client jar skip for inherited version")
                 }
 
-                _stage.value = Stage.Libraries(versionId, 0, details.libraries?.size ?: 0)
+                _stage.value = Stage.Libraries(versionId, 0, details.libraries.size)
                 val libResult = libraryDownloader.downloadLibraries(details)
                 libResult.onFailure {
                     _stage.value = Stage.Error(versionId, it.message ?: "Libraries failed")
@@ -53,9 +55,7 @@ class FullClientInstaller @Inject constructor(
 
                 if (includeAssets) {
                     _stage.value = Stage.Assets(versionId, 0, 0)
-                    val assetResult = assetDownloader.downloadAssets(details)
-                    assetResult.onFailure {
-                        // Assets optional for headless tests — still report
+                    assetDownloader.downloadAssets(details).onFailure {
                         Timber.w(it, "Assets incomplete")
                     }
                 }
