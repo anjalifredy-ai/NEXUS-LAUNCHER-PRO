@@ -32,13 +32,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nexus.launcher.cosmetics.CosmeticCategory
+import com.nexus.launcher.cosmetics.CosmeticEquipService
 import com.nexus.launcher.cosmetics.CosmeticItem
 import com.nexus.launcher.cosmetics.CosmeticsStore
 import com.nexus.launcher.cosmetics.source.CatalogueRepository
@@ -50,12 +50,15 @@ import kotlinx.coroutines.launch
 fun CosmeticsStoreScreen(
     store: CosmeticsStore,
     catalogueRepository: CatalogueRepository,
+    equipService: CosmeticEquipService,
     onOpenWardrobe: () -> Unit,
     onBack: () -> Unit
 ) {
     var query by remember { mutableStateOf("") }
     var category by remember { mutableStateOf(CosmeticCategory.SKINS) }
     var favoritesOnly by remember { mutableStateOf(false) }
+    var statusMsg by remember { mutableStateOf<String?>(null) }
+    var equippingId by remember { mutableStateOf<String?>(null) }
     val favorites by store.favorites.collectAsState()
     val catalogue by catalogueRepository.state.collectAsState()
     val scope = rememberCoroutineScope()
@@ -65,7 +68,6 @@ fun CosmeticsStoreScreen(
         catalogueRepository.resetAndLoad(category, query)
     }
 
-    // Infinite scroll: near end → load more
     LaunchedEffect(listState, catalogue.hasMore, catalogue.loading) {
         snapshotFlow {
             val info = listState.layoutInfo
@@ -97,7 +99,7 @@ fun CosmeticsStoreScreen(
         }
         Text("Nexus Cosmetics Universe", color = NexusColors.Primary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Text(
-            "Paginated sources · not a fixed hardcoded list. " + store.visibilityNote(),
+            "Paginated sources · Equip downloads skins locally. " + store.visibilityNote(),
             color = NexusColors.OnSurfaceMuted,
             fontSize = 11.sp
         )
@@ -106,7 +108,7 @@ fun CosmeticsStoreScreen(
             value = query,
             onValueChange = { query = it },
             modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-            label = { Text("Search (username for Mojang · name for lists)") },
+            label = { Text("Search (MC username or name)") },
             singleLine = true,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = NexusColors.OnSurface,
@@ -117,9 +119,7 @@ fun CosmeticsStoreScreen(
         )
         Row {
             Button(
-                onClick = {
-                    scope.launch { catalogueRepository.resetAndLoad(category, query) }
-                },
+                onClick = { scope.launch { catalogueRepository.resetAndLoad(category, query) } },
                 colors = ButtonDefaults.buttonColors(containerColor = NexusColors.Primary)
             ) {
                 Text("Search", color = Color(0xFF052E16))
@@ -155,17 +155,11 @@ fun CosmeticsStoreScreen(
             )
         }
 
-        Text(
-            "Sources: " + catalogueRepository.listSources().joinToString { it.displayName },
-            color = NexusColors.OnSurfaceMuted,
-            fontSize = 10.sp
-        )
-
+        statusMsg?.let {
+            Text(it, color = NexusColors.Accent, fontSize = 12.sp, modifier = Modifier.padding(vertical = 4.dp))
+        }
         catalogue.error?.let {
             Text(it, color = NexusColors.Danger, fontSize = 12.sp)
-        }
-        catalogue.sourceNotes.forEach {
-            Text(it, color = NexusColors.Warning, fontSize = 10.sp)
         }
 
         Spacer(Modifier.height(6.dp))
@@ -179,10 +173,15 @@ fun CosmeticsStoreScreen(
                 CosmeticRow(
                     item = item,
                     favorited = item.id in favorites,
+                    busy = equippingId == item.id,
                     onFavorite = { store.toggleFavorite(item.id) },
                     onEquip = {
-                        store.markViewed(item.id)
-                        store.equip(item.category, item.id)
+                        equippingId = item.id
+                        scope.launch {
+                            val r = equipService.equipItem(item)
+                            statusMsg = r.message
+                            equippingId = null
+                        }
                     }
                 )
             }
@@ -205,10 +204,10 @@ fun CosmeticsStoreScreen(
                         }
                     }
                     displayItems.isEmpty() -> {
-                        Text("No items. Try another category or search.", color = NexusColors.OnSurfaceMuted)
+                        Text("No items. Try Search or another category.", color = NexusColors.OnSurfaceMuted)
                     }
                     else -> {
-                        Text("End of available pages for current sources.", color = NexusColors.OnSurfaceMuted, fontSize = 11.sp)
+                        Text("End of available pages.", color = NexusColors.OnSurfaceMuted, fontSize = 11.sp)
                     }
                 }
             }
@@ -220,6 +219,7 @@ fun CosmeticsStoreScreen(
 private fun CosmeticRow(
     item: CosmeticItem,
     favorited: Boolean,
+    busy: Boolean,
     onFavorite: () -> Unit,
     onEquip: () -> Unit
 ) {
@@ -227,25 +227,22 @@ private fun CosmeticRow(
         modifier = Modifier
             .fillMaxWidth()
             .background(NexusColors.Surface)
-            .clickable(onClick = onEquip)
+            .clickable(enabled = !busy, onClick = onEquip)
             .padding(12.dp)
     ) {
         Text(item.name, color = NexusColors.OnSurface, fontWeight = FontWeight.SemiBold)
         Text(
-            "${item.category.name} · ${item.rarity.name} · ${item.id.take(40)}",
+            "${item.category.name} · ${item.rarity.name}",
             color = NexusColors.OnSurfaceMuted,
             fontSize = 11.sp
         )
         Text(item.description, color = NexusColors.OnSurfaceMuted, fontSize = 12.sp)
-        item.assetPath?.let {
-            Text("Asset: ${it.take(60)}", color = NexusColors.OnSurfaceMuted, fontSize = 10.sp)
-        }
         Row {
             TextButton(onClick = onFavorite) {
                 Text(if (favorited) "★ Fav" else "☆ Fav", color = NexusColors.Primary)
             }
-            TextButton(onClick = onEquip) {
-                Text("Equip", color = NexusColors.Accent)
+            TextButton(onClick = onEquip, enabled = !busy) {
+                Text(if (busy) "…" else "Equip", color = NexusColors.Accent)
             }
         }
     }
