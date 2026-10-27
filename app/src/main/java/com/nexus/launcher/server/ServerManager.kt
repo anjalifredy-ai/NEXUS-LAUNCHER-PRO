@@ -27,13 +27,16 @@ class ServerManager @Inject constructor(
     private val ramAdvisor: ServerRamAdvisor,
     private val worldManager: ServerWorldManager,
     private val pluginManager: ServerPluginManager,
-    private val viaVersionInstaller: ViaVersionInstaller
+    private val viaVersionInstaller: ViaVersionInstaller,
+    private val lanAddressHelper: LanAddressHelper
 ) {
     val servers: StateFlow<List<ServerConfig>> = store.servers
     val runtimeStatus: StateFlow<Map<String, ServerRuntimeStatus>> = processManager.status
     val consoleLines: SharedFlow<ServerProcessManager.ConsoleLine> = processManager.consoleLines
 
     suspend fun loadServers() = store.load()
+
+    fun lanInfo(port: Int = 25565): LanInfo = lanAddressHelper.currentLanInfo(port)
 
     suspend fun createServer(
         name: String,
