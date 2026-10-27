@@ -13,6 +13,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -21,12 +22,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nexus.launcher.auth.AuthManager
 import com.nexus.launcher.filesystem.FileSystemManager
 import com.nexus.launcher.jre.JavaRuntimeManager
 import com.nexus.launcher.mods.ModrinthClient
 import com.nexus.launcher.network.DownloadQueueManager
 import com.nexus.launcher.server.ServerJavaResolver
 import com.nexus.launcher.server.ServerManager
+import com.nexus.launcher.ui.auth.OfflineLoginScreen
 import com.nexus.launcher.ui.mods.ModrinthSearchScreen
 import com.nexus.launcher.ui.server.CreateServerScreen
 import com.nexus.launcher.ui.server.JreInstallBanner
@@ -55,6 +58,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var modrinthClient: ModrinthClient
     @Inject lateinit var downloadQueueManager: DownloadQueueManager
     @Inject lateinit var fileSystemManager: FileSystemManager
+    @Inject lateinit var authManager: AuthManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -74,6 +78,7 @@ class MainActivity : ComponentActivity() {
                 var mcVersions by remember {
                     mutableStateOf(listOf("1.21.1", "1.20.4", "1.19.4", "1.18.2", "1.16.5"))
                 }
+                val account by authManager.activeAccount.collectAsState()
 
                 LaunchedEffect(Unit) {
                     serverManager.loadServers()
@@ -89,22 +94,44 @@ class MainActivity : ComponentActivity() {
                     Column(modifier = Modifier.fillMaxSize()) {
                         JreInstallBanner(javaRuntimeManager)
 
-                        // Simple top nav
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
-                        ) {
+                        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
                             TextButton(onClick = { route = "servers" }) {
-                                Text("Servers", color = if (route.startsWith("server") || route == "create" || route == "detail") NexusColors.Primary else NexusColors.OnSurfaceMuted, fontSize = 13.sp)
+                                Text(
+                                    "Servers",
+                                    color = if (route == "servers" || route == "create" || route == "detail")
+                                        NexusColors.Primary else NexusColors.OnSurfaceMuted,
+                                    fontSize = 13.sp
+                                )
                             }
                             TextButton(onClick = { route = "versions" }) {
-                                Text("Versions", color = if (route == "versions") NexusColors.Primary else NexusColors.OnSurfaceMuted, fontSize = 13.sp)
+                                Text(
+                                    "Versions",
+                                    color = if (route == "versions") NexusColors.Primary else NexusColors.OnSurfaceMuted,
+                                    fontSize = 13.sp
+                                )
                             }
                             TextButton(onClick = { route = "mods" }) {
-                                Text("Mods", color = if (route == "mods") NexusColors.Primary else NexusColors.OnSurfaceMuted, fontSize = 13.sp)
+                                Text(
+                                    "Mods",
+                                    color = if (route == "mods") NexusColors.Primary else NexusColors.OnSurfaceMuted,
+                                    fontSize = 13.sp
+                                )
+                            }
+                            TextButton(onClick = { route = "account" }) {
+                                Text(
+                                    account?.username ?: "Account",
+                                    color = if (route == "account") NexusColors.Primary else NexusColors.OnSurfaceMuted,
+                                    fontSize = 13.sp
+                                )
                             }
                         }
 
                         when {
+                            route == "account" -> OfflineLoginScreen(
+                                authManager = authManager,
+                                onLoggedIn = { route = "servers" },
+                                onBack = { route = "servers" }
+                            )
                             route == "versions" -> VersionsScreen(
                                 versionManager = versionManager,
                                 fullClientInstaller = fullClientInstaller,
