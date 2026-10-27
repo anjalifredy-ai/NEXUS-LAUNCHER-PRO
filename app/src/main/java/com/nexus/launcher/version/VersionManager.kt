@@ -23,6 +23,14 @@ class VersionManager @Inject constructor(
 ) {
     private var cachedManifest: VersionManifestResponse? = null
 
+    // Late inject to avoid cycle — set from a small helper or call resolve after construction
+    @Volatile
+    private var inheritanceResolver: VersionInheritanceResolver? = null
+
+    fun attachInheritanceResolver(resolver: VersionInheritanceResolver) {
+        inheritanceResolver = resolver
+    }
+
     suspend fun getVersionManifest(forceRefresh: Boolean = false): VersionManifestResponse =
         withContext(Dispatchers.IO) {
             if (!forceRefresh && cachedManifest != null) {
@@ -41,6 +49,7 @@ class VersionManager @Inject constructor(
         return getVersionManifest().versions
     }
 
+    /** Raw single version JSON (no inheritance merge). */
     suspend fun getVersionDetails(versionId: String): VersionJson = withContext(Dispatchers.IO) {
         val versionDir = fileSystemManager.getVersionDir(versionId)
         val jsonFile = File(versionDir, "$versionId.json")
@@ -61,5 +70,15 @@ class VersionManager @Inject constructor(
         jsonFile.writeText(raw)
 
         versionJsonParser.parse(raw, versionId)
+    }
+
+    /** Fully merged version (follows inheritsFrom). Prefer this for install/launch. */
+    suspend fun getResolvedVersion(versionId: String): VersionJson {
+        val resolver = inheritanceResolver
+        return if (resolver != null) {
+            resolver.resolve(versionId)
+        } else {
+            getVersionDetails(versionId)
+        }
     }
 }
