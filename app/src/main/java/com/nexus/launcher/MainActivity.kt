@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nexus.launcher.auth.AuthManager
+import com.nexus.launcher.cosmetics.CosmeticEquipService
 import com.nexus.launcher.cosmetics.CosmeticsStore
 import com.nexus.launcher.cosmetics.source.CatalogueRepository
 import com.nexus.launcher.filesystem.FileSystemManager
@@ -70,6 +71,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var voiceChatManager: VoiceChatManager
     @Inject lateinit var cosmeticsStore: CosmeticsStore
     @Inject lateinit var catalogueRepository: CatalogueRepository
+    @Inject lateinit var cosmeticEquipService: CosmeticEquipService
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -124,6 +126,7 @@ class MainActivity : ComponentActivity() {
                             route == "store" -> CosmeticsStoreScreen(
                                 store = cosmeticsStore,
                                 catalogueRepository = catalogueRepository,
+                                equipService = cosmeticEquipService,
                                 onOpenWardrobe = { route = "wardrobe" },
                                 onBack = { route = "servers" }
                             )
