@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -38,10 +40,12 @@ import com.nexus.launcher.ui.server.ServerListScreen
 import com.nexus.launcher.ui.theme.NexusColors
 import com.nexus.launcher.ui.theme.NexusTheme
 import com.nexus.launcher.ui.versions.VersionsScreen
+import com.nexus.launcher.ui.voice.VoiceChatScreen
 import com.nexus.launcher.util.PermissionHelper
 import com.nexus.launcher.version.ClientVersionInstaller
 import com.nexus.launcher.version.FullClientInstaller
 import com.nexus.launcher.version.VersionManager
+import com.nexus.launcher.voice.VoiceChatManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -59,6 +63,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var downloadQueueManager: DownloadQueueManager
     @Inject lateinit var fileSystemManager: FileSystemManager
     @Inject lateinit var authManager: AuthManager
+    @Inject lateinit var voiceChatManager: VoiceChatManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -94,39 +99,25 @@ class MainActivity : ComponentActivity() {
                     Column(modifier = Modifier.fillMaxSize()) {
                         JreInstallBanner(javaRuntimeManager)
 
-                        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-                            TextButton(onClick = { route = "servers" }) {
-                                Text(
-                                    "Servers",
-                                    color = if (route == "servers" || route == "create" || route == "detail")
-                                        NexusColors.Primary else NexusColors.OnSurfaceMuted,
-                                    fontSize = 13.sp
-                                )
-                            }
-                            TextButton(onClick = { route = "versions" }) {
-                                Text(
-                                    "Versions",
-                                    color = if (route == "versions") NexusColors.Primary else NexusColors.OnSurfaceMuted,
-                                    fontSize = 13.sp
-                                )
-                            }
-                            TextButton(onClick = { route = "mods" }) {
-                                Text(
-                                    "Mods",
-                                    color = if (route == "mods") NexusColors.Primary else NexusColors.OnSurfaceMuted,
-                                    fontSize = 13.sp
-                                )
-                            }
-                            TextButton(onClick = { route = "account" }) {
-                                Text(
-                                    account?.username ?: "Account",
-                                    color = if (route == "account") NexusColors.Primary else NexusColors.OnSurfaceMuted,
-                                    fontSize = 13.sp
-                                )
-                            }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 4.dp)
+                        ) {
+                            NavBtn("Servers", route in listOf("servers", "create", "detail")) { route = "servers" }
+                            NavBtn("Versions", route == "versions") { route = "versions" }
+                            NavBtn("Mods", route == "mods") { route = "mods" }
+                            NavBtn("Voice", route == "voice") { route = "voice" }
+                            NavBtn(account?.username ?: "Account", route == "account") { route = "account" }
                         }
 
                         when {
+                            route == "voice" -> VoiceChatScreen(
+                                voiceChatManager = voiceChatManager,
+                                availableMcVersions = mcVersions,
+                                onBack = { route = "servers" }
+                            )
                             route == "account" -> OfflineLoginScreen(
                                 authManager = authManager,
                                 onLoggedIn = { route = "servers" },
@@ -158,6 +149,7 @@ class MainActivity : ComponentActivity() {
                             route == "detail" && selectedServerId != null -> ServerDetailScreen(
                                 serverId = selectedServerId!!,
                                 serverManager = serverManager,
+                                voiceChatManager = voiceChatManager,
                                 onBack = { route = "servers" }
                             )
                             else -> ServerListScreen(
@@ -175,5 +167,16 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+}
+
+@androidx.compose.runtime.Composable
+private fun NavBtn(label: String, selected: Boolean, onClick: () -> Unit) {
+    TextButton(onClick = onClick) {
+        Text(
+            label,
+            color = if (selected) NexusColors.Primary else NexusColors.OnSurfaceMuted,
+            fontSize = 13.sp
+        )
     }
 }
