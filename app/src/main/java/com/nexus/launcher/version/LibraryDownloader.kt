@@ -1,6 +1,5 @@
 package com.nexus.launcher.version
 
-import android.os.Build
 import com.nexus.launcher.data.model.Library
 import com.nexus.launcher.data.model.VersionJson
 import com.nexus.launcher.filesystem.FileSystemManager
@@ -27,9 +26,6 @@ data class LibraryProgress(
     val currentName: String = ""
 )
 
-/**
- * Downloads Maven libraries required by a version JSON (Android classifiers filtered).
- */
 @Singleton
 class LibraryDownloader @Inject constructor(
     private val fileSystemManager: FileSystemManager,
@@ -41,7 +37,7 @@ class LibraryDownloader @Inject constructor(
 
     suspend fun downloadLibraries(version: VersionJson): Result<Int> = withContext(Dispatchers.IO) {
         try {
-            val needed = version.libraries.orEmpty().filter { lib ->
+            val needed = version.libraries.filter { lib ->
                 rulesAllow(lib) && artifactPath(lib) != null
             }
             _progress.value = LibraryProgress(0, needed.size)
@@ -70,13 +66,12 @@ class LibraryDownloader @Inject constructor(
         val path = artifactPath(lib) ?: return
         val url = artifactUrl(lib) ?: return
         val target = File(fileSystemManager.librariesDir, path)
+        val sha = lib.artifact?.sha1
         if (target.exists() && target.length() > 0) {
-            val sha = lib.downloads?.artifact?.sha1
             if (sha.isNullOrBlank() || sha1Verifier.verify(target, sha)) return
         }
         target.parentFile?.mkdirs()
         downloadQueueManager.downloadFile(url, target)
-        val sha = lib.downloads?.artifact?.sha1
         if (!sha.isNullOrBlank() && !sha1Verifier.verify(target, sha)) {
             target.delete()
             throw IllegalStateException("SHA1 fail: ${lib.name}")
@@ -84,8 +79,7 @@ class LibraryDownloader @Inject constructor(
     }
 
     private fun artifactPath(lib: Library): String? {
-        lib.downloads?.artifact?.path?.let { return it }
-        // Maven path from name: group:artifact:version
+        lib.artifact?.path?.takeIf { it.isNotBlank() }?.let { return it }
         val parts = lib.name.split(":")
         if (parts.size < 3) return null
         val group = parts[0].replace('.', '/')
@@ -95,25 +89,19 @@ class LibraryDownloader @Inject constructor(
     }
 
     private fun artifactUrl(lib: Library): String? {
-        lib.downloads?.artifact?.url?.let { return it }
+        lib.artifact?.url?.takeIf { it.isNotBlank() }?.let { return it }
         val path = artifactPath(lib) ?: return null
         return "https://libraries.minecraft.net/$path"
     }
 
     private fun rulesAllow(lib: Library): Boolean {
         val rules = lib.rules ?: return true
-        // Simplified: disallow explicit os != android / disallow windows-only when action allow+os windows
         var allowed = true
         for (rule in rules) {
-            val osName = rule.os?.name
+            val osName = rule.osName
             when (rule.action) {
                 "allow" -> {
-                    if (osName != null && osName != "osx" && osName != "windows" && osName != "linux") {
-                        // unknown
-                    }
-                    if (osName == "windows" || osName == "osx") {
-                        allowed = false
-                    }
+                    if (osName == "windows" || osName == "osx") allowed = false
                     if (osName == null || osName == "linux") allowed = true
                 }
                 "disallow" -> {
@@ -125,7 +113,7 @@ class LibraryDownloader @Inject constructor(
     }
 
     fun classpathJars(version: VersionJson): List<File> {
-        return version.libraries.orEmpty().mapNotNull { lib ->
+        return version.libraries.mapNotNull { lib ->
             if (!rulesAllow(lib)) return@mapNotNull null
             val path = artifactPath(lib) ?: return@mapNotNull null
             File(fileSystemManager.librariesDir, path).takeIf { it.exists() }
