@@ -4,12 +4,12 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nexus.launcher.auth.AuthManager
+import com.nexus.launcher.cosmetics.CosmeticsStore
 import com.nexus.launcher.filesystem.FileSystemManager
 import com.nexus.launcher.jre.JavaRuntimeManager
 import com.nexus.launcher.mods.ModrinthClient
@@ -32,6 +33,8 @@ import com.nexus.launcher.network.DownloadQueueManager
 import com.nexus.launcher.server.ServerJavaResolver
 import com.nexus.launcher.server.ServerManager
 import com.nexus.launcher.ui.auth.OfflineLoginScreen
+import com.nexus.launcher.ui.cosmetics.CosmeticsStoreScreen
+import com.nexus.launcher.ui.cosmetics.WardrobeScreen
 import com.nexus.launcher.ui.mods.ModrinthSearchScreen
 import com.nexus.launcher.ui.server.CreateServerScreen
 import com.nexus.launcher.ui.server.JreInstallBanner
@@ -64,6 +67,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var fileSystemManager: FileSystemManager
     @Inject lateinit var authManager: AuthManager
     @Inject lateinit var voiceChatManager: VoiceChatManager
+    @Inject lateinit var cosmeticsStore: CosmeticsStore
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -108,11 +112,23 @@ class MainActivity : ComponentActivity() {
                             NavBtn("Servers", route in listOf("servers", "create", "detail")) { route = "servers" }
                             NavBtn("Versions", route == "versions") { route = "versions" }
                             NavBtn("Mods", route == "mods") { route = "mods" }
+                            NavBtn("Store", route == "store") { route = "store" }
+                            NavBtn("Wardrobe", route == "wardrobe") { route = "wardrobe" }
                             NavBtn("Voice", route == "voice") { route = "voice" }
                             NavBtn(account?.username ?: "Account", route == "account") { route = "account" }
                         }
 
                         when {
+                            route == "store" -> CosmeticsStoreScreen(
+                                store = cosmeticsStore,
+                                onOpenWardrobe = { route = "wardrobe" },
+                                onBack = { route = "servers" }
+                            )
+                            route == "wardrobe" -> WardrobeScreen(
+                                store = cosmeticsStore,
+                                onOpenStore = { route = "store" },
+                                onBack = { route = "servers" }
+                            )
                             route == "voice" -> VoiceChatScreen(
                                 voiceChatManager = voiceChatManager,
                                 availableMcVersions = mcVersions,
