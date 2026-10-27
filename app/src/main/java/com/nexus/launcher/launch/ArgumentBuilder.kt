@@ -9,6 +9,10 @@ import com.nexus.launcher.libraries.RuleEvaluator
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Builds full JVM + game argument list for Minecraft client launch.
+ * Supports modern `arguments` and legacy `minecraftArguments`.
+ */
 @Singleton
 class ArgumentBuilder @Inject constructor(
     private val ruleEvaluator: RuleEvaluator
@@ -29,82 +33,111 @@ class ArgumentBuilder @Inject constructor(
         val args = mutableListOf<String>()
 
         args.add(javaPath)
-        args.add("-Xms${memoryMb}m")
+        args.add("-Xms${(memoryMb / 2).coerceAtLeast(256)}m")
         args.add("-Xmx${memoryMb}m")
+        args.add("-XX:+UseG1GC")
+        args.add("-XX:-UseAdaptiveSizePolicy")
 
         if (jvmArgs.isNotBlank()) {
             args.addAll(jvmArgs.split(" ").filter { it.isNotBlank() })
         }
 
+        var classpathAdded = false
         versionJson.arguments?.jvm?.forEach { jvmArg ->
             if (ruleEvaluator.evaluateRules(jvmArg.rules)) {
                 jvmArg.value.forEach { value ->
-                    args.add(processPlaceholder(value, versionJson, account, mcDir, nativesDir, classpath, width, height))
+                    val processed = processPlaceholder(
+                        value, versionJson, account, mcDir, nativesDir, classpath, width, height
+                    )
+                    if (processed == "-cp" || processed == "-classpath") {
+                        args.add(processed)
+                        args.add(classpath)
+                        classpathAdded = true
+                    } else if (processed.contains("\${classpath}") || processed == classpath) {
+                        args.add(classpath)
+                        classpathAdded = true
+                    } else {
+                        args.add(processed)
+                    }
                 }
             }
         }
 
-        args.add("-Dorg.lwjgl.system.sharedLibs=$nativesDir")
-        args.add("-Dorg.lwjgl.opengl.libgl4es.path=$nativesDir/libGL.so")
-        args.add("-Dorg.lwjgl.openal.libpath=$nativesDir/libopenal.so")
+        if (!classpathAdded) {
+            args.add("-cp")
+            args.add(classpath)
+        }
 
-        when (renderer) {
-            "ltw" -> args.add("-Dorg.lwjgl.opengl.egl=true")
-            "vulkan" -> args.add("-Dorg.lwjgl.opengl.renderer=vulkan")
-            "gles" -> args.add("-Dorg.lwjgl.opengl.renderer=gles")
-            else -> args.add("-Dorg.lwjgl.opengl.renderer=gl4es")
+        args.add("-Djava.library.path=$nativesDir")
+        args.add("-Djna.boot.library.path=$nativesDir")
+        args.add("-Dorg.lwjgl.system.sharedLibraryExtractPath=$nativesDir")
+        args.add("-Dorg.lwjgl.opengl.libname=libGL.so")
+
+        when (renderer.lowercase()) {
+            "ltw", "egl" -> args.add("-Dorg.lwjgl.opengl.egl=true")
+            "vulkan" -> args.add("-Dorg.lwjgl.vulkan=true")
+            "gles" -> { /* default mobile path */ }
+            else -> { /* gl4es path set via natives */ }
         }
 
         args.add(versionJson.mainClass)
 
-        versionJson.arguments?.game?.forEach { gameArg ->
-            if (ruleEvaluator.evaluateRules(gameArg.rules)) {
-                gameArg.value.forEach { value ->
-                    args.add(processPlaceholder(value, versionJson, account, mcDir, nativesDir, classpath, width, height))
+        val legacy = versionJson.legacyArguments
+        if (!legacy.isNullOrBlank() && versionJson.arguments == null) {
+            legacy.split(" ").filter { it.isNotBlank() }.forEach { token ->
+                args.add(
+                    processPlaceholder(
+                        token, versionJson, account, mcDir, nativesDir, classpath, width, height
+                    )
+                )
+            }
+        } else {
+            versionJson.arguments?.game?.forEach { gameArg ->
+                if (ruleEvaluator.evaluateRules(gameArg.rules)) {
+                    gameArg.value.forEach { value ->
+                        args.add(
+                            processPlaceholder(
+                                value, versionJson, account, mcDir, nativesDir, classpath, width, height
+                            )
+                        )
+                    }
                 }
             }
         }
 
-        args.add("--username")
-        args.add(account.username)
-        args.add("--uuid")
-        args.add(account.uuid)
-        args.add("--accessToken")
-        args.add(account.accessToken)
+        // Ensure required identity args even if version JSON omitted them
+        ensureArg(args, "--username", account.username)
+        ensureArg(args, "--uuid", account.uuid)
+        ensureArg(args, "--accessToken", account.accessToken)
 
         when (account) {
             is MicrosoftAccount -> {
-                args.add("--userType")
-                args.add("msa")
-                args.add("--xuid")
-                args.add(account.xuid ?: "")
+                ensureArg(args, "--userType", "msa")
+                if (!account.xuid.isNullOrBlank()) ensureArg(args, "--xuid", account.xuid!!)
             }
-            is ElyByAccount -> {
-                args.add("--userType")
-                args.add("elyby")
-            }
-            is OfflineAccount -> {
-                args.add("--userType")
-                args.add("offline")
-            }
+            is ElyByAccount -> ensureArg(args, "--userType", "elyby")
+            is OfflineAccount -> ensureArg(args, "--userType", "legacy")
         }
 
-        args.add("--version")
-        args.add(versionJson.id)
-        args.add("--gameDir")
-        args.add(mcDir)
-        args.add("--assetsDir")
-        args.add("$mcDir/assets")
-        args.add("--assetIndex")
-        args.add(versionJson.assets)
-        args.add("--versionType")
-        args.add(versionJson.type)
-        args.add("--width")
-        args.add(width.toString())
-        args.add("--height")
-        args.add(height.toString())
+        ensureArg(args, "--version", versionJson.id)
+        ensureArg(args, "--gameDir", mcDir)
+        ensureArg(args, "--assetsDir", "$mcDir/assets")
+        ensureArg(args, "--assetIndex", versionJson.assetIndex?.id ?: versionJson.assets)
+        ensureArg(args, "--versionType", versionJson.type)
+        ensureArg(args, "--width", width.toString())
+        ensureArg(args, "--height", height.toString())
 
         return args
+    }
+
+    private fun ensureArg(args: MutableList<String>, key: String, value: String) {
+        val idx = args.indexOf(key)
+        if (idx >= 0 && idx + 1 < args.size) {
+            args[idx + 1] = value
+        } else {
+            args.add(key)
+            args.add(value)
+        }
     }
 
     private fun processPlaceholder(
@@ -118,22 +151,25 @@ class ArgumentBuilder @Inject constructor(
         height: Int
     ): String {
         return value
-            .replace("${auth_player_name}", account.username)
-            .replace("${auth_uuid}", account.uuid)
-            .replace("${auth_access_token}", account.accessToken)
-            .replace("${auth_session}", "token:${account.accessToken}:${account.uuid}")
-            .replace("${user_type}", "msa")
-            .replace("${version_name}", versionJson.id)
-            .replace("${game_directory}", mcDir)
-            .replace("${game_assets}", "$mcDir/assets")
-            .replace("${assets_root}", "$mcDir/assets")
-            .replace("${assets_index_name}", versionJson.assets)
-            .replace("${version_type}", versionJson.type)
-            .replace("${natives_directory}", nativesDir)
-            .replace("${classpath}", classpath)
-            .replace("${user_properties}", "{}")
-            .replace("${resolution_width}", width.toString())
-            .replace("${resolution_height}", height.toString())
-            .replace("${library_directory}", "$mcDir/libraries")
+            .replace("\${auth_player_name}", account.username)
+            .replace("\${auth_uuid}", account.uuid)
+            .replace("\${auth_access_token}", account.accessToken)
+            .replace("\${auth_session}", "token:${account.accessToken}:${account.uuid}")
+            .replace("\${user_type}", "msa")
+            .replace("\${version_name}", versionJson.id)
+            .replace("\${game_directory}", mcDir)
+            .replace("\${game_assets}", "$mcDir/assets")
+            .replace("\${assets_root}", "$mcDir/assets")
+            .replace("\${assets_index_name}", versionJson.assetIndex?.id ?: versionJson.assets)
+            .replace("\${version_type}", versionJson.type)
+            .replace("\${natives_directory}", nativesDir)
+            .replace("\${launcher_name}", "NexusLauncher")
+            .replace("\${launcher_version}", "1.0.0")
+            .replace("\${classpath}", classpath)
+            .replace("\${user_properties}", "{}")
+            .replace("\${resolution_width}", width.toString())
+            .replace("\${resolution_height}", height.toString())
+            .replace("\${library_directory}", "$mcDir/libraries")
+            .replace("\${classpath_separator}", ":")
     }
 }
