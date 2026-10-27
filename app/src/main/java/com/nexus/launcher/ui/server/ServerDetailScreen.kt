@@ -59,6 +59,7 @@ import com.nexus.launcher.server.WorldFolder
 import com.nexus.launcher.server.model.ServerConfig
 import com.nexus.launcher.server.model.ServerState
 import com.nexus.launcher.ui.theme.NexusColors
+import com.nexus.launcher.voice.VoiceChatManager
 import kotlinx.coroutines.launch
 
 enum class ServerTab { Overview, Console, Settings, Worlds, Plugins }
@@ -67,6 +68,7 @@ enum class ServerTab { Overview, Console, Settings, Worlds, Plugins }
 fun ServerDetailScreen(
     serverId: String,
     serverManager: ServerManager,
+    voiceChatManager: VoiceChatManager? = null,
     onBack: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -98,11 +100,7 @@ fun ServerDetailScreen(
     }
     val lan = remember(cfg.port) { serverManager.lanInfo(cfg.port) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(NexusColors.Background)
-    ) {
+    Column(Modifier = Modifier.fillMaxSize().background(NexusColors.Background)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -168,12 +166,7 @@ fun ServerDetailScreen(
         }
 
         message?.let {
-            Text(
-                it,
-                color = NexusColors.Danger,
-                fontSize = 12.sp,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-            )
+            Text(it, color = NexusColors.Danger, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp))
         }
 
         Row(
@@ -190,7 +183,7 @@ fun ServerDetailScreen(
         }
 
         when (tab) {
-            ServerTab.Overview -> OverviewTab(cfg, state, message, lan)
+            ServerTab.Overview -> OverviewTab(cfg, state, message, lan, voiceChatManager)
             ServerTab.Console -> ConsoleTab(serverId, serverManager)
             ServerTab.Settings -> SettingsTab(cfg, serverManager) { config = it }
             ServerTab.Worlds -> WorldsTab(serverId, serverManager)
@@ -223,7 +216,8 @@ private fun OverviewTab(
     cfg: ServerConfig,
     state: ServerState,
     message: String?,
-    lan: LanInfo
+    lan: LanInfo,
+    voiceChatManager: VoiceChatManager?
 ) {
     val context = LocalContext.current
     var copied by remember { mutableStateOf(false) }
@@ -236,10 +230,7 @@ private fun OverviewTab(
     ) {
         Text("LAN join", color = NexusColors.Primary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Spacer(Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     lan.joinAddress ?: "No LAN IP",
@@ -262,28 +253,22 @@ private fun OverviewTab(
                 }
             }
         }
-        if (copied) {
-            Text("Copied to clipboard", color = NexusColors.Online, fontSize = 12.sp)
+        if (copied) Text("Copied", color = NexusColors.Online, fontSize = 12.sp)
+
+        Spacer(Modifier.height(16.dp))
+        if (voiceChatManager != null) {
+            ServerVoiceSection(config = cfg, voiceChatManager = voiceChatManager)
         }
 
-        Spacer(Modifier.height(20.dp))
-        Text("Overview", color = NexusColors.Primary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Spacer(Modifier.height(12.dp))
+        Text("Overview", color = NexusColors.Primary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Spacer(Modifier.height(8.dp))
         InfoRow("MOTD", cfg.motd)
         InfoRow("Directory", cfg.serverDir)
         InfoRow("World", cfg.worldDir)
         InfoRow("Online-mode", cfg.onlineMode.toString())
-        InfoRow("Whitelist", cfg.whitelist.toString())
-        InfoRow("EULA", if (cfg.eulaAccepted) "Accepted" else "Not accepted")
         InfoRow("State", state.name)
         message?.let { InfoRow("Last error", it) }
-
-        Spacer(Modifier.height(16.dp))
-        Text(
-            "Public internet join needs a relay (not automatic). Same Wi‑Fi only for free LAN.",
-            color = NexusColors.OnSurfaceMuted,
-            fontSize = 12.sp
-        )
     }
 }
 
@@ -316,17 +301,13 @@ private fun ConsoleTab(serverId: String, serverManager: ServerManager) {
     Column(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .background(Color(0xFF0A0A0A))
-                .padding(8.dp)
+            modifier = Modifier.weight(1f).fillMaxWidth().background(Color(0xFF0A0A0A)).padding(8.dp)
         ) {
             items(lines) { line ->
                 Text(
                     line,
                     color = when {
-                        line.contains("ERROR", true) || line.contains("Exception", true) -> NexusColors.Danger
+                        line.contains("ERROR", true) -> NexusColors.Danger
                         line.contains("WARN", true) -> NexusColors.Warning
                         else -> Color(0xFFB0BEC5)
                     },
@@ -343,7 +324,7 @@ private fun ConsoleTab(serverId: String, serverManager: ServerManager) {
                 value = command,
                 onValueChange = { command = it },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("say Hello / stop / list") },
+                placeholder = { Text("command") },
                 singleLine = true,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = NexusColors.OnSurface,
@@ -379,14 +360,10 @@ private fun SettingsTab(
     var savedMsg by remember { mutableStateOf<String?>(null) }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp)
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)
     ) {
         Text("Settings → server.properties", color = NexusColors.Primary, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(12.dp))
-
         ToggleRow("Online mode", local.onlineMode) { local = local.copy(onlineMode = it) }
         ToggleRow("Whitelist", local.whitelist) { local = local.copy(whitelist = it) }
         ToggleRow("PvP", local.pvp) { local = local.copy(pvp = it) }
@@ -395,40 +372,6 @@ private fun SettingsTab(
         ToggleRow("Command blocks", local.enableCommandBlocks) {
             local = local.copy(enableCommandBlocks = it)
         }
-
-        Text("Difficulty: ${local.difficulty}", color = NexusColors.OnSurface)
-        Row {
-            listOf("peaceful", "easy", "normal", "hard").forEach { d ->
-                TextButton(onClick = { local = local.copy(difficulty = d) }) {
-                    Text(d, color = if (local.difficulty == d) NexusColors.Primary else NexusColors.OnSurfaceMuted)
-                }
-            }
-        }
-        Text("Gamemode: ${local.gamemode}", color = NexusColors.OnSurface)
-        Row {
-            listOf("survival", "creative", "adventure", "spectator").forEach { g ->
-                TextButton(onClick = { local = local.copy(gamemode = g) }) {
-                    Text(g, color = if (local.gamemode == g) NexusColors.Primary else NexusColors.OnSurfaceMuted)
-                }
-            }
-        }
-        Text("View distance: ${local.viewDistance}", color = NexusColors.OnSurface)
-        Row {
-            listOf(4, 6, 8, 10, 12).forEach { v ->
-                TextButton(onClick = { local = local.copy(viewDistance = v) }) {
-                    Text("$v", color = if (local.viewDistance == v) NexusColors.Primary else NexusColors.OnSurfaceMuted)
-                }
-            }
-        }
-        Text("Max players: ${local.maxPlayers}", color = NexusColors.OnSurface)
-        Row {
-            listOf(5, 10, 20, 30).forEach { n ->
-                TextButton(onClick = { local = local.copy(maxPlayers = n) }) {
-                    Text("$n", color = if (local.maxPlayers == n) NexusColors.Primary else NexusColors.OnSurfaceMuted)
-                }
-            }
-        }
-
         Spacer(Modifier.height(16.dp))
         Button(
             onClick = {
@@ -436,7 +379,7 @@ private fun SettingsTab(
                     val r = serverManager.updateSettings(local)
                     r.onSuccess {
                         onUpdated(it)
-                        savedMsg = "Saved. Restart server for all changes."
+                        savedMsg = "Saved"
                     }
                     r.onFailure { savedMsg = it.message }
                 }
@@ -444,12 +387,9 @@ private fun SettingsTab(
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = NexusColors.Primary)
         ) {
-            Text("Save settings", color = Color(0xFF052E16))
+            Text("Save", color = Color(0xFF052E16))
         }
-        savedMsg?.let {
-            Spacer(Modifier.height(8.dp))
-            Text(it, color = NexusColors.Accent, fontSize = 12.sp)
-        }
+        savedMsg?.let { Text(it, color = NexusColors.Accent, fontSize = 12.sp) }
     }
 }
 
@@ -464,10 +404,7 @@ private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
         Switch(
             checked = checked,
             onCheckedChange = onChange,
-            colors = SwitchDefaults.colors(
-                checkedTrackColor = NexusColors.PrimaryDim,
-                checkedThumbColor = NexusColors.Primary
-            )
+            colors = SwitchDefaults.colors(checkedTrackColor = NexusColors.PrimaryDim)
         )
     }
 }
@@ -484,61 +421,26 @@ private fun WorldsTab(serverId: String, serverManager: ServerManager) {
         saves = serverManager.listLauncherSaves()
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)
-    ) {
+    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text("Server worlds", color = NexusColors.Primary, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-        if (serverWorlds.isEmpty()) {
-            Text("No worlds yet", color = NexusColors.OnSurfaceMuted, fontSize = 13.sp)
-        } else {
-            serverWorlds.forEach { w ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(w.name, color = NexusColors.OnSurface)
-                        Text("${w.sizeBytes / 1024} KB", color = NexusColors.OnSurfaceMuted, fontSize = 11.sp)
-                    }
-                    TextButton(onClick = {
-                        scope.launch {
-                            val r = serverManager.setActiveWorld(serverId, w.name)
-                            msg = if (r.isSuccess) "Active: ${w.name}" else r.exceptionOrNull()?.message
-                        }
-                    }) { Text("Use", color = NexusColors.Primary) }
+        serverWorlds.forEach { w ->
+            Text("${w.name} (${w.sizeBytes / 1024} KB)", color = NexusColors.OnSurface, fontSize = 13.sp)
+        }
+        if (serverWorlds.isEmpty()) Text("None", color = NexusColors.OnSurfaceMuted)
+        Spacer(Modifier.height(12.dp))
+        Text("Import saves", color = NexusColors.Primary, fontWeight = FontWeight.Bold)
+        saves.forEach { w ->
+            TextButton(onClick = {
+                scope.launch {
+                    val r = serverManager.importWorld(serverId, w.path)
+                    msg = if (r.isSuccess) {
+                        serverWorlds = serverManager.listServerWorlds(serverId)
+                        "Imported ${w.name}"
+                    } else r.exceptionOrNull()?.message
                 }
-            }
+            }) { Text("Import ${w.name}", color = NexusColors.Accent) }
         }
-        Spacer(Modifier.height(20.dp))
-        Text("Import from launcher saves", color = NexusColors.Primary, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-        if (saves.isEmpty()) {
-            Text("No saves found", color = NexusColors.OnSurfaceMuted, fontSize = 13.sp)
-        } else {
-            saves.forEach { w ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(w.name, color = NexusColors.OnSurface)
-                    TextButton(onClick = {
-                        scope.launch {
-                            val r = serverManager.importWorld(serverId, w.path)
-                            msg = if (r.isSuccess) {
-                                serverWorlds = serverManager.listServerWorlds(serverId)
-                                "Imported ${w.name}"
-                            } else r.exceptionOrNull()?.message
-                        }
-                    }) { Text("Import", color = NexusColors.Accent) }
-                }
-            }
-        }
-        msg?.let {
-            Spacer(Modifier.height(8.dp))
-            Text(it, color = NexusColors.Accent, fontSize = 12.sp)
-        }
+        msg?.let { Text(it, color = NexusColors.Accent, fontSize = 12.sp) }
     }
 }
 
@@ -554,27 +456,15 @@ private fun PluginsTab(serverId: String, serverManager: ServerManager) {
         plugins = serverManager.listPlugins(serverId)
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)
-    ) {
+    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text("Plugins / Mods", color = NexusColors.Primary, fontWeight = FontWeight.Bold)
-        Text("Toggle needs server restart", color = NexusColors.OnSurfaceMuted, fontSize = 12.sp)
-        Spacer(Modifier.height(12.dp))
-
         plugins.forEach { p ->
             Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(p.fileName, color = NexusColors.OnSurface, fontSize = 13.sp)
-                    Text(
-                        if (p.enabled) "Enabled" else "Disabled",
-                        color = if (p.enabled) NexusColors.Online else NexusColors.Offline,
-                        fontSize = 11.sp
-                    )
-                }
+                Text(p.fileName, color = NexusColors.OnSurface, fontSize = 13.sp)
                 Switch(
                     checked = p.enabled,
                     onCheckedChange = { en ->
@@ -587,18 +477,12 @@ private fun PluginsTab(serverId: String, serverManager: ServerManager) {
                 )
             }
         }
-        if (plugins.isEmpty()) {
-            Text("No plugins installed", color = NexusColors.OnSurfaceMuted, fontSize = 13.sp)
-        }
-
-        Spacer(Modifier.height(20.dp))
-        Text("Install from URL", color = NexusColors.Primary, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(12.dp))
         OutlinedTextField(
             value = url,
             onValueChange = { url = it },
-            label = { Text("Direct .jar URL") },
+            label = { Text("Jar URL") },
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = NexusColors.OnSurface,
                 unfocusedTextColor = NexusColors.OnSurface,
@@ -606,21 +490,6 @@ private fun PluginsTab(serverId: String, serverManager: ServerManager) {
                 unfocusedBorderColor = NexusColors.OnSurfaceMuted
             )
         )
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = fileName,
-            onValueChange = { fileName = it },
-            label = { Text("File name") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = NexusColors.OnSurface,
-                unfocusedTextColor = NexusColors.OnSurface,
-                focusedBorderColor = NexusColors.Primary,
-                unfocusedBorderColor = NexusColors.OnSurfaceMuted
-            )
-        )
-        Spacer(Modifier.height(8.dp))
         Button(
             onClick = {
                 scope.launch {
@@ -633,11 +502,8 @@ private fun PluginsTab(serverId: String, serverManager: ServerManager) {
             },
             colors = ButtonDefaults.buttonColors(containerColor = NexusColors.Primary)
         ) {
-            Text("Download & install", color = Color(0xFF052E16))
+            Text("Install", color = Color(0xFF052E16))
         }
-        msg?.let {
-            Spacer(Modifier.height(8.dp))
-            Text(it, color = NexusColors.Accent, fontSize = 12.sp)
-        }
+        msg?.let { Text(it, color = NexusColors.Accent, fontSize = 12.sp) }
     }
 }
