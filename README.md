@@ -1,50 +1,65 @@
 # NEXUS LAUNCHER PRO
 
-**Custom Minecraft Java Edition Launcher Engine for Android**  
-Built from scratch · No PojavLauncher / ZalithLauncher fork · 100% own engine  
-**Tagline:** PLAY BEYOND LIMITS
+**Custom Minecraft Java Edition launcher + on-device server hosting for Android**  
+Engine-first · Own codebase (not a drop-in CS Launcher / Pojav UI fork)
 
 ---
 
-## Status
+## Implemented (server hosting core)
 
-🚧 **Engine under active development**  
-UI later. Core engine first.
+- [x] Gradle + Hilt + Compose shell
+- [x] Version manifest (Mojang) + version JSON models
+- [x] Download queue + SHA1 helpers
+- [x] Launch pipeline skeleton (args, process, logs)
+- [x] **On-device server hosting**
+  - Server list with **banner cards**
+  - Create wizard: version select, software, RAM advisor, EULA
+  - Installers: **Vanilla, Paper, Purpur, Fabric, Quilt, Forge, NeoForge**
+  - Process start/stop + real console + commands
+  - Settings → writes `server.properties` (online-mode, whitelist, PvP, …)
+  - Worlds: list / import from launcher saves / set active
+  - Plugins/mods: install URL, enable/disable
+  - **ViaVersion** optional on Paper/Purpur (multi-client protocol)
+  - **Java 8 / 17 / 21 auto-install** (BellSoft Liberica)
+  - **Foreground service** notification while server runs
+  - **LAN IPv4** helper for same-Wi‑Fi join address
 
-### Roadmap
-- [x] Project scaffolding & Gradle (AGP 8.6 + Kotlin 2.0)
-- [ ] Authentication (Microsoft OAuth2 + Ely.by + Offline)
-- [ ] Version manifest + inheritance resolver
-- [ ] Asset & Library download + SHA1 verification
-- [ ] JRE management (Liberica 8/17/21)
-- [ ] Loaders (Fabric / Forge / Quilt / NeoForge / OptiFine)
-- [ ] Launch pipeline (ProcessBuilder + argument builder)
-- [ ] Native bridge (OpenGL ES + OpenAL + Input)
-- [ ] Mod management (Modrinth + CurseForge)
-- [ ] Worlds + Multiplayer (ping, LAN, Realms)
-- [ ] Settings + Logging + Self-update
-- [ ] GitHub Actions CI/CD
+## Not done yet
 
----
+- Full Microsoft / Ely.by auth UI
+- Full client game launch (GLES bridge polish)
+- Modrinth/CurseForge browser UI
+- Public relay/tunnel
+- Voice chat
+- Production CI APK pipeline
 
-## Architecture
+## Honest limits
+
+- Server runs **on the phone** — not remote hosting
+- No 24/7 guarantee (OEM battery killers, thermal)
+- Public internet needs a **relay** (CGNAT); LAN works on same Wi‑Fi
+- Spigot: use Paper instead (BuildTools too heavy on device)
+
+## Paths
 
 ```
-UI Layer (Compose) → Business Logic → Data Layer → Native Bridge (JNI)
-                                              ↓
-                                    Minecraft Java Process
+/sdcard/NexusLauncher/.minecraft/   # client data
+/sdcard/NexusLauncher/servers/      # server instances
+/sdcard/NexusLauncher/runtime/      # JRE 8/17/21
 ```
 
-## Tech Stack
+## Build
 
-- Kotlin 2.0 + Jetpack Compose + Material 3
-- Hilt, Room, DataStore, Retrofit, OkHttp, Coroutines, Timber
-- External (runtime download): Liberica JDK, LWJGL3 Android, GL4ES, OpenAL Soft
+Open in Android Studio (SDK 34, JDK 17). Resolve signing env vars for release.
+
+```bash
+./gradlew :app:assembleDebug
+```
 
 ## License
 
-MIT
+MIT (application code). Upstream Minecraft EULA applies to server jars. Liberica / Paper / Fabric licenses apply to their artifacts.
 
 ---
 
-Built by Rohit / NEXUS team
+**Note:** CS Launcher V3 is a separate product (CS branding). This repo is **Nexus Launcher PRO**.
