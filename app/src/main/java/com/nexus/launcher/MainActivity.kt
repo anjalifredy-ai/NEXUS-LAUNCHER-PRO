@@ -22,6 +22,7 @@ import com.nexus.launcher.ui.server.JreInstallBanner
 import com.nexus.launcher.ui.server.ServerDetailScreen
 import com.nexus.launcher.ui.server.ServerListScreen
 import com.nexus.launcher.ui.theme.NexusTheme
+import com.nexus.launcher.util.PermissionHelper
 import com.nexus.launcher.version.VersionManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -38,6 +39,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        PermissionHelper.ensureLegacyStorage(this)
+        PermissionHelper.requestNotifications(this)
+        if (!PermissionHelper.hasManageExternalStorage()) {
+            PermissionHelper.requestManageExternalStorage(this)
+        }
+
         setContent {
             NexusTheme {
                 val scope = rememberCoroutineScope()
@@ -60,7 +68,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 Scaffold(modifier = Modifier.fillMaxSize()) {
-                    Column(Modifier = Modifier.fillMaxSize()) {
+                    Column(modifier = Modifier.fillMaxSize()) {
                         JreInstallBanner(javaRuntimeManager)
 
                         when {
@@ -87,10 +95,7 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onCreateServer = { route = "create" },
                                 onStartServer = { id ->
-                                    scope.launch {
-                                        // getJrePath auto-installs if missing
-                                        serverManager.startServer(id)
-                                    }
+                                    scope.launch { serverManager.startServer(id) }
                                 },
                                 onStopServer = { id ->
                                     scope.launch { serverManager.stopServer(id) }
