@@ -32,6 +32,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nexus.launcher.cosmetics.CosmeticAssetCache
 import com.nexus.launcher.cosmetics.CosmeticsStore
 import com.nexus.launcher.ui.theme.NexusColors
 import kotlinx.coroutines.Dispatchers
@@ -43,6 +44,7 @@ import java.io.FileOutputStream
 @Composable
 fun WardrobeScreen(
     store: CosmeticsStore,
+    assetCache: CosmeticAssetCache,
     onOpenStore: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -52,6 +54,7 @@ fun WardrobeScreen(
     val context = LocalContext.current
     var outfitName by remember { mutableStateOf("PvP") }
     var message by remember { mutableStateOf<String?>(null) }
+    var cacheBytes by remember { mutableStateOf(assetCache.cacheSizeBytes()) }
 
     val pickSkin = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
@@ -69,6 +72,7 @@ fun WardrobeScreen(
                 onSuccess = { "Imported & equipped: ${it.name}" },
                 onFailure = { it.message }
             )
+            cacheBytes = assetCache.cacheSizeBytes()
         }
     }
 
@@ -110,8 +114,28 @@ fun WardrobeScreen(
         ) {
             Text("Import skin PNG", color = Color(0xFF052E16))
         }
-        TextButton(onClick = { store.resetLoadout() }) {
+        TextButton(onClick = {
+            store.resetLoadout()
+            message = "Loadout reset"
+        }) {
             Text("Reset loadout", color = NexusColors.Danger)
+        }
+
+        Spacer(Modifier.height(16.dp))
+        Text("Asset cache", color = NexusColors.Primary, fontWeight = FontWeight.Bold)
+        Text(
+            "Size: ${cacheBytes / 1024} KB",
+            color = NexusColors.OnSurfaceMuted,
+            fontSize = 13.sp
+        )
+        TextButton(
+            onClick = {
+                val n = assetCache.clearCache()
+                cacheBytes = assetCache.cacheSizeBytes()
+                message = "Cleared $n cached files"
+            }
+        ) {
+            Text("Clear cosmetic cache", color = NexusColors.Warning)
         }
 
         Spacer(Modifier.height(16.dp))
