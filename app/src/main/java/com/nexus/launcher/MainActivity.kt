@@ -29,6 +29,7 @@ import com.nexus.launcher.cosmetics.CosmeticAssetCache
 import com.nexus.launcher.cosmetics.CosmeticEquipService
 import com.nexus.launcher.cosmetics.CosmeticsStore
 import com.nexus.launcher.cosmetics.source.CatalogueRepository
+import com.nexus.launcher.cosmetics.source.SourceHealthChecker
 import com.nexus.launcher.filesystem.FileSystemManager
 import com.nexus.launcher.jre.JavaRuntimeManager
 import com.nexus.launcher.mods.ModrinthClient
@@ -74,6 +75,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var catalogueRepository: CatalogueRepository
     @Inject lateinit var cosmeticEquipService: CosmeticEquipService
     @Inject lateinit var cosmeticAssetCache: CosmeticAssetCache
+    @Inject lateinit var sourceHealthChecker: SourceHealthChecker
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -129,6 +131,7 @@ class MainActivity : ComponentActivity() {
                                 store = cosmeticsStore,
                                 catalogueRepository = catalogueRepository,
                                 equipService = cosmeticEquipService,
+                                sourceHealthChecker = sourceHealthChecker,
                                 onOpenWardrobe = { route = "wardrobe" },
                                 onBack = { route = "servers" }
                             )
