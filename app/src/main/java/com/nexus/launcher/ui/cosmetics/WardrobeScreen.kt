@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -33,7 +35,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nexus.launcher.cosmetics.CosmeticAssetCache
+import com.nexus.launcher.cosmetics.CosmeticCategory
 import com.nexus.launcher.cosmetics.CosmeticsStore
+import com.nexus.launcher.cosmetics.LocalCosmeticCatalogue
 import com.nexus.launcher.ui.theme.NexusColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -55,6 +59,11 @@ fun WardrobeScreen(
     var outfitName by remember { mutableStateOf("PvP") }
     var message by remember { mutableStateOf<String?>(null) }
     var cacheBytes by remember { mutableStateOf(assetCache.cacheSizeBytes()) }
+    var emoteSlotIndex by remember { mutableStateOf(0) }
+
+    val emotes = remember {
+        LocalCosmeticCatalogue.all().filter { it.category == CosmeticCategory.EMOTES }
+    }
 
     val pickSkin = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
@@ -89,7 +98,7 @@ fun WardrobeScreen(
         }
         Text("Wardrobe", color = NexusColors.Primary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Text(
-            "Preview is text-based until 3D renderer is wired. Loadout is persisted.",
+            "Loadout persisted. Emote slots local only until client wheel exists.",
             color = NexusColors.OnSurfaceMuted,
             fontSize = 12.sp
         )
@@ -101,11 +110,49 @@ fun WardrobeScreen(
         LoadoutLine("Hat / head", loadout.hatId)
         LoadoutLine("Back", loadout.backId)
         LoadoutLine("Wings", loadout.wingsId)
+
+        Spacer(Modifier.height(12.dp))
+        Text("Emote wheel slots (1–6)", color = NexusColors.Primary, fontWeight = FontWeight.Bold)
         Text(
-            "Emotes: ${loadout.emoteSlots.mapIndexed { i, id -> "${i + 1}:${id ?: "—"}" }.joinToString(" ")}",
+            "Select a slot, then pick an emote. In-game wheel = future client mod.",
             color = NexusColors.OnSurfaceMuted,
-            fontSize = 12.sp
+            fontSize = 11.sp
         )
+        Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+            (0 until 6).forEach { i ->
+                val slotId = loadout.emoteSlots.getOrNull(i)
+                FilterChip(
+                    selected = emoteSlotIndex == i,
+                    onClick = { emoteSlotIndex = i },
+                    label = {
+                        Text(
+                            "${i + 1}: ${slotId?.take(10) ?: "—"}",
+                            fontSize = 10.sp
+                        )
+                    }
+                )
+            }
+        }
+        Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+            TextButton(
+                onClick = {
+                    store.setEmoteSlot(emoteSlotIndex, null)
+                    message = "Cleared slot ${emoteSlotIndex + 1}"
+                }
+            ) {
+                Text("Clear slot", color = NexusColors.Danger)
+            }
+            emotes.forEach { e ->
+                FilterChip(
+                    selected = loadout.emoteSlots.getOrNull(emoteSlotIndex) == e.id,
+                    onClick = {
+                        store.setEmoteSlot(emoteSlotIndex, e.id)
+                        message = "Slot ${emoteSlotIndex + 1} → ${e.name}"
+                    },
+                    label = { Text(e.name, fontSize = 11.sp) }
+                )
+            }
+        }
 
         Spacer(Modifier.height(12.dp))
         Button(
@@ -123,11 +170,7 @@ fun WardrobeScreen(
 
         Spacer(Modifier.height(16.dp))
         Text("Asset cache", color = NexusColors.Primary, fontWeight = FontWeight.Bold)
-        Text(
-            "Size: ${cacheBytes / 1024} KB",
-            color = NexusColors.OnSurfaceMuted,
-            fontSize = 13.sp
-        )
+        Text("Size: ${cacheBytes / 1024} KB", color = NexusColors.OnSurfaceMuted, fontSize = 13.sp)
         TextButton(
             onClick = {
                 val n = assetCache.clearCache()
@@ -182,11 +225,7 @@ fun WardrobeScreen(
         }
 
         Spacer(Modifier.height(16.dp))
-        Text(
-            store.visibilityNote(),
-            color = NexusColors.OnSurfaceMuted,
-            fontSize = 11.sp
-        )
+        Text(store.visibilityNote(), color = NexusColors.OnSurfaceMuted, fontSize = 11.sp)
     }
 }
 
