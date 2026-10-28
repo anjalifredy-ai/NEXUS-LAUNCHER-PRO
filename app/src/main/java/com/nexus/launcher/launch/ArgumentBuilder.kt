@@ -6,12 +6,14 @@ import com.nexus.launcher.data.model.MicrosoftAccount
 import com.nexus.launcher.data.model.OfflineAccount
 import com.nexus.launcher.data.model.VersionJson
 import com.nexus.launcher.libraries.RuleEvaluator
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
  * Builds full JVM + game argument list for Minecraft client launch.
  * Supports modern `arguments` and legacy `minecraftArguments`.
+ * Optional local Nexus skin path via system property for client-side readers.
  */
 @Singleton
 class ArgumentBuilder @Inject constructor(
@@ -28,7 +30,8 @@ class ArgumentBuilder @Inject constructor(
         jvmArgs: String,
         renderer: String,
         width: Int,
-        height: Int
+        height: Int,
+        localSkinPath: String? = null
     ): List<String> {
         val args = mutableListOf<String>()
 
@@ -73,11 +76,20 @@ class ArgumentBuilder @Inject constructor(
         args.add("-Dorg.lwjgl.system.sharedLibraryExtractPath=$nativesDir")
         args.add("-Dorg.lwjgl.opengl.libname=libGL.so")
 
+        // Local cosmetics hint — only if file exists (offline / custom clients may read this)
+        val skin = localSkinPath?.takeIf { File(it).exists() }
+            ?: File(mcDir, "profiles/default/skin.png").takeIf { it.exists() }?.absolutePath
+            ?: File(mcDir, "skin.png").takeIf { it.exists() }?.absolutePath
+        if (skin != null) {
+            args.add("-Dnexus.cosmetics.skin=$skin")
+            args.add("-Dnexus.localSkin=$skin")
+        }
+
         when (renderer.lowercase()) {
             "ltw", "egl" -> args.add("-Dorg.lwjgl.opengl.egl=true")
             "vulkan" -> args.add("-Dorg.lwjgl.vulkan=true")
-            "gles" -> { /* default mobile path */ }
-            else -> { /* gl4es path set via natives */ }
+            "gles" -> { }
+            else -> { }
         }
 
         args.add(versionJson.mainClass)
@@ -105,7 +117,6 @@ class ArgumentBuilder @Inject constructor(
             }
         }
 
-        // Ensure required identity args even if version JSON omitted them
         ensureArg(args, "--username", account.username)
         ensureArg(args, "--uuid", account.uuid)
         ensureArg(args, "--accessToken", account.accessToken)
