@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nexus.launcher.auth.AuthManager
+import com.nexus.launcher.cosmetics.CosmeticAssetCache
 import com.nexus.launcher.cosmetics.CosmeticEquipService
 import com.nexus.launcher.cosmetics.CosmeticsStore
 import com.nexus.launcher.cosmetics.source.CatalogueRepository
@@ -72,6 +73,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var cosmeticsStore: CosmeticsStore
     @Inject lateinit var catalogueRepository: CatalogueRepository
     @Inject lateinit var cosmeticEquipService: CosmeticEquipService
+    @Inject lateinit var cosmeticAssetCache: CosmeticAssetCache
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -132,6 +134,7 @@ class MainActivity : ComponentActivity() {
                             )
                             route == "wardrobe" -> WardrobeScreen(
                                 store = cosmeticsStore,
+                                assetCache = cosmeticAssetCache,
                                 onOpenStore = { route = "store" },
                                 onBack = { route = "servers" }
                             )
