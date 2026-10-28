@@ -42,15 +42,19 @@ import com.nexus.launcher.cosmetics.CosmeticEquipService
 import com.nexus.launcher.cosmetics.CosmeticItem
 import com.nexus.launcher.cosmetics.CosmeticsStore
 import com.nexus.launcher.cosmetics.source.CatalogueRepository
+import com.nexus.launcher.cosmetics.source.SourceHealthChecker
 import com.nexus.launcher.ui.theme.NexusColors
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun CosmeticsStoreScreen(
     store: CosmeticsStore,
     catalogueRepository: CatalogueRepository,
     equipService: CosmeticEquipService,
+    sourceHealthChecker: SourceHealthChecker,
     onOpenWardrobe: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -58,6 +62,7 @@ fun CosmeticsStoreScreen(
     var category by remember { mutableStateOf(CosmeticCategory.SKINS) }
     var favoritesOnly by remember { mutableStateOf(false) }
     var statusMsg by remember { mutableStateOf<String?>(null) }
+    var healthLines by remember { mutableStateOf<List<String>>(emptyList()) }
     var equippingId by remember { mutableStateOf<String?>(null) }
     val favorites by store.favorites.collectAsState()
     val catalogue by catalogueRepository.state.collectAsState()
@@ -129,6 +134,20 @@ fun CosmeticsStoreScreen(
             }) {
                 Text("Retry", color = NexusColors.Accent)
             }
+            TextButton(onClick = {
+                scope.launch {
+                    val reports = withContext(Dispatchers.IO) { sourceHealthChecker.checkAll() }
+                    healthLines = reports.map {
+                        "${it.sourceId}: ${if (it.ok) "OK" else "DOWN"} (${it.detail})"
+                    }
+                }
+            }) {
+                Text("Check sources", color = NexusColors.Primary)
+            }
+        }
+
+        healthLines.forEach {
+            Text(it, color = NexusColors.OnSurfaceMuted, fontSize = 10.sp)
         }
 
         Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
